@@ -1,0 +1,12 @@
+/_pycache_
+/API Responses
+/build
+/dist
+/venv
+/Labels
+/logs
+/icons
+/images
+*.json
+DHL Label *
+*.kdbx

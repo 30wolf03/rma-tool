@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file alias="icon.ico">icons/icon.ico</file>
+    </qresource>
+    <qresource prefix="/">
+        <file alias="global_style.qss">global_style.qss</file>
+        <file alias="blank_label.png">images/blank_label.png</file>
+    </qresource>
+</RCC>

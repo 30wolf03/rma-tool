@@ -1,0 +1,58 @@
+/* Allgemeines Widget-Design */
+QWidget {
+    background-color: rgb(255, 255, 255);
+    font-family: sans-serif;
+    font-weight: bold;
+    color: #000;
+}
+
+/* Eingabefelder */
+QLineEdit {
+    background-color: #f0f0f0;
+    color: #000;
+    border: 1px solid #ccc;
+    padding: 5px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #3498db;
+}
+
+/* Buttons */
+QPushButton {
+    background-color: rgba(246, 177, 55, 1);
+    border: none;
+    color: #fff;
+    font-weight: bold;
+    padding: 5px 10px;
+    margin: 5px;
+}
+
+QPushButton:hover {
+    background-color: rgb(212, 152, 48);
+}
+
+QPushButton:pressed {
+    background-color: rgb(221, 156, 42);
+}
+
+/* Labels */
+QLabel {
+    color: #000;
+}
+
+/* Benachrichtigungen */
+#notification {
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 5px;
+}
+
+/* Fehlercontainer */
+#errorContainer {
+    background-color: rgba(255, 0, 0, 0.8);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 5px;
+}
