@@ -24,7 +24,7 @@ class DHLLabelGenerator(QMainWindow):
         self.logger = setup_logger()
         
         # Setze den Fenstertitel
-        self.setWindowTitle("DHL Label Tool 14.5")
+        self.setWindowTitle("DHL Label Tool 15")
         
          # API Credentials
         self.username = None
