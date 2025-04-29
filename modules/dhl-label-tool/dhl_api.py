@@ -127,7 +127,26 @@ class DHLAPI:
                 else:
                     raise Exception(f"Authentifizierung endgültig fehlgeschlagen: {e}")
 
-    def send_label_request(self, payload, validate=False):
+    def mask_sensitive_data(self, data):
+        """Maskiert sensible Daten in den Logs."""
+        if isinstance(data, dict):
+            masked_data = data.copy()
+            sensitive_keys = ['Authorization', 'password', 'client_secret', 'access_token', 'token']
+            for key in sensitive_keys:
+                if key in masked_data:
+                    masked_data[key] = '***MASKED***'
+            return masked_data
+        return data
+
+    def log_safe_data(self, message, data=None):
+        """Loggt Daten sicher, ohne sensible Informationen."""
+        if data:
+            masked_data = self.mask_sensitive_data(data)
+            self.logger.info(f"{message}: {json.dumps(masked_data, indent=2)}")
+        else:
+            self.logger.info(message)
+
+    def send_label_request(self, payload, validate=True):
         """Sendet die Label-Anfrage an die DHL API."""
         url = "https://api-eu.dhl.com/parcel/de/shipping/v2/orders"
         if validate:
@@ -144,8 +163,8 @@ class DHLAPI:
         try:
             self.logger.info(f"Sende Label-Anfrage an DHL API")
             self.logger.info(f"URL: {url}")
-            self.logger.info(f"Headers: {json.dumps(headers, indent=2)}")
-            self.logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+            self.log_safe_data("Headers", headers)
+            self.log_safe_data("Payload", payload)
             
             response = requests.post(url, json=payload, headers=headers)
             response_data = response.json()
@@ -154,8 +173,8 @@ class DHLAPI:
             if validate:
                 self.logger.info("Validierungsantwort von DHL API:")
                 self.logger.info(f"Status Code: {response.status_code}")
-                self.logger.info(f"Response Headers: {dict(response.headers)}")
-                self.logger.info(f"Response Body: {json.dumps(response_data, indent=2)}")
+                self.log_safe_data("Response Headers", dict(response.headers))
+                self.log_safe_data("Response Body", response_data)
                 
                 if response.status_code == 400:
                     # Prüfe auf Validierungsmeldungen in den Items
@@ -179,8 +198,7 @@ class DHLAPI:
                         self.logger.warning(f"Schwache Validierungswarnung: {error_detail}")
                         return response_data
                     else:
-                        self.logger.error(f"API Fehler: {response.status_code} - {response.text}")
-                        raise ValueError("Die Adressdaten konnten nicht validiert werden")
+                        raise ValueError(f"Fehler bei der DHL API: {error_detail}")
                 elif response.status_code != 200:
                     self.logger.error(f"API Fehler: {response.status_code} - {response.text}")
                     raise ValueError("Die Adressvalidierung ist fehlgeschlagen")
@@ -256,45 +274,36 @@ class DHLAPI:
         
         return sender_data
 
-    def process_label_request(self, sender_data, reference, weight):
+    def process_label_request(self, sender_data, reference, weight, validate=True):
         """Verarbeitet die Label-Anfrage und gibt die Sendungsnummer und das Label zurück."""
         try:
-            # Erstelle den Payload für die Anfrage
-            shipment_payload = self.create_shipment_payload(sender_data, reference, weight)
+            # Erstelle das Payload für die DHL API
+            payload = self.create_shipment_payload(sender_data, reference, weight)
             
-            # Validiere die Adresse (nur als Warnung)
-            self.logger.info("Validiere Adresse")
-            validation_response = self.send_label_request(shipment_payload, validate=True)
-            validation_warning = None
-
-            # Prüfe auf Validierungsfehler und speichere sie als Warnung
-            if "status" in validation_response:
-                error_detail = validation_response.get("status", {}).get("detail", "")
-                if error_detail:
-                    # Logge die vollständige Fehlermeldung
-                    self.logger.warning(f"Validierungsfehler: {error_detail}")
-                    # Extrahiere nur den relevanten Teil für die UI-Anzeige
-                    if "The street entered could not be found" in error_detail:
-                        validation_warning = "Die eingegebene Straße konnte nicht gefunden werden."
-                    else:
-                        validation_warning = error_detail
-
-            # Erstelle das Label (unabhängig von der Validierung)
-            self.logger.info("Erstelle Label")
-            label_response = self.send_label_request(shipment_payload)
+            # Sende die Anfrage an die DHL API
+            response_data = self.send_label_request(payload, validate)
             
-            if not label_response.get("items") or not label_response["items"]:
-                raise ValueError("Keine Items in der API-Antwort")
+            # Bei Validierung: Prüfe auf Validierungswarnungen
+            if validate:
+                if "status" in response_data:
+                    error_detail = response_data.get("status", {}).get("detail", "")
+                    if error_detail:
+                        return None, None, error_detail
+                return None, None, None
+            
+            # Bei Label-Erstellung: Extrahiere die Sendungsnummer und das Label
+            if "items" in response_data and len(response_data["items"]) > 0:
+                item = response_data["items"][0]
+                shipment_no = item.get("shipmentNo")
+                label_b64 = item.get("label", {}).get("b64")
                 
-            shipment_no = label_response["items"][0].get("shipmentNo")
-            label_b64 = label_response["items"][0].get("label", {}).get("b64", "")
+                if not shipment_no or not label_b64:
+                    raise ValueError("Keine Sendungsnummer oder Label in der Antwort")
+                    
+                return shipment_no, label_b64, None
+            else:
+                raise ValueError("Keine Items in der API-Antwort")
             
-            if not shipment_no or not label_b64:
-                raise ValueError("Label konnte nicht erstellt werden: Keine Sendungsnummer oder Label in der Antwort")
-            
-            self.logger.info(f"Label erfolgreich erstellt. Sendungsnummer: {shipment_no}")
-            return shipment_no, label_b64, validation_warning
-
         except Exception as e:
-            self.logger.error(f"Fehler bei der Label-Erstellung: {str(e)}")
+            self.logger.error(f"Fehler bei der Label-Anfrage: {str(e)}")
             raise

@@ -43,27 +43,38 @@ def setup_logger():
     """Richtet den Logger ein."""
     logger = logging.getLogger("DHLLabelGenerator")
     if not logger.hasHandlers():
+        # Bestimme das Basisverzeichnis
+        if getattr(sys, 'frozen', False):
+            # Wenn die Anwendung als ausführbare Datei läuft
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            # Wenn die Anwendung im Entwicklungsmodus läuft
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+
         # Erstelle einen Ordner für Logs, falls noch nicht vorhanden
-        log_dir = "logs"
+        log_dir = os.path.join(base_dir, "logs")
         os.makedirs(log_dir, exist_ok=True)
 
         # Dateiname mit Zeitstempel
         log_filename = f"dhllabeltool_{datetime.now().strftime('%Y%m%d_%H-%M-%S')}.log"
         log_filepath = os.path.join(log_dir, log_filename)
-
+        
         # Handler für Datei und Konsole
         file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
         console_handler = logging.StreamHandler(sys.stdout)
-
+        
         # Formatter für beide Handler
         formatter = BlockFormatter(datefmt='%Y-%m-%d %H:%M:%S')
         file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
-
+        
         # Handler zum Logger hinzufügen
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)
         logger.setLevel(logging.DEBUG)
+        
+        # Logge den Start der Anwendung
+        logger.info(f"Anwendung gestartet. Log-Datei: {log_filepath}")
     return logger
 
 
@@ -120,7 +131,7 @@ def clear_all_fields(window):
     fields_to_clear = [
         'name_input', 'street_input', 'house_input', 'additional_info_input',
         'postal_input', 'city_input', 'email_input', 'phone_input',
-        'ref_input', 'ticket_nr_input', 'weight_input', 'problem_description'
+        'ref_input', 'ticket_nr_input', 'weight_input'
     ]
     for field in fields_to_clear:
         if hasattr(window, field):

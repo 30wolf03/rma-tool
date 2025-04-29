@@ -1,5 +1,6 @@
 import requests
 import json
+import re
 from typing import Optional
 from utils import setup_logger
 
@@ -136,4 +137,65 @@ class BillbeeAPI:
                 return None
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Fehler beim Abrufen der Bestellungen: {str(e)}")
+            return None
+
+    def extract_serial_number(self, notes: str) -> Optional[str]:
+        """
+        Extrahiert die Seriennummer aus den Notizen.
+        Sucht nach Mustern wie *C1-02-34567, C1-02-34567 oder DBA01-23456.
+        """
+        try:
+            # Suche nach dem ersten Muster: *C1-02-34567 oder C1-02-34567
+            pattern1 = r'[*]?C\d{1,2}-\d{2}-\d{5}'
+            match1 = re.search(pattern1, notes)
+            if match1:
+                return match1.group(0)
+
+            # Suche nach dem zweiten Muster: DBA01-23456
+            pattern2 = r'DBA\d{2}-\d{5}'
+            match2 = re.search(pattern2, notes)
+            if match2:
+                return match2.group(0)
+
+            self.logger.info("Keine Seriennummer in den Notizen gefunden")
+            return None
+        except Exception as e:
+            self.logger.error(f"Fehler beim Extrahieren der Seriennummer: {str(e)}")
+            return None
+
+    def get_order_notes(self, order_id: str) -> Optional[str]:
+        """
+        Ruft die Notizen einer Bestellung ab.
+        """
+        try:
+            # Direkter Endpunkt für die Bestellung
+            order_endpoint = f"{self.base_url}/orders/{order_id}"
+            self.logger.info(f"Rufe Bestelldaten ab von: {order_endpoint}")
+            
+            response = requests.get(
+                order_endpoint,
+                headers=self.headers,
+                auth=self.auth
+            )
+            response.raise_for_status()
+            order_data = response.json()
+            
+            # Logge die vollständige Antwort
+            self.logger.info(f"Vollständige Bestelldaten: {json.dumps(order_data, indent=2)}")
+            
+            # Extrahiere die Notizen aus den Bestelldaten
+            if order_data.get("Data"):
+                notes = order_data["Data"].get("SellerComment", "")
+                self.logger.info(f"Gefundene Notizen (SellerComment): {notes}")
+                
+                if notes:
+                    self.logger.info(f"Notizen gefunden: {notes}")
+                    return notes
+            
+            self.logger.info("Keine Notizen für die Bestellung gefunden")
+            return None
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Fehler beim Abrufen der Bestellnotizen: {str(e)}")
+            if hasattr(e.response, 'text'):
+                self.logger.error(f"API-Antwort: {e.response.text}")
             return None

@@ -1,6 +1,7 @@
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError, HeaderChecksumError
 import os
+import sys
 from utils import setup_logger, LogBlock
 
 class KeePassHandler:
@@ -55,3 +56,68 @@ class KeePassHandler:
         except Exception as e:
             self.logger.error(f"Fehler beim Abrufen der Zugangsdaten: {str(e)}")
             return None, None
+
+def get_database_path():
+    if getattr(sys, "frozen", False):
+        # Wenn die Anwendung als ausführbare Datei läuft
+        base_path = os.path.dirname(sys.executable)
+        internal_path = os.path.join(base_path, "_internal")
+        return os.path.join(internal_path, "DHL_Label_Generator_secrets.kdbx")
+    else:
+        # Wenn die Anwendung im Entwicklungsmodus läuft
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base_path, "DHL_Label_Generator_secrets.kdbx")
+
+def load_credentials(master_password):
+    """Lädt alle API-Credentials aus der KeePass-Datenbank."""
+    try:
+        # Pfad zur KeePass-Datei
+        database_path = get_database_path()
+        
+        # Erstelle eine Instanz des KeePassHandlers
+        kp_handler = KeePassHandler(database_path)
+        
+        # Öffne die Datenbank mit dem übergebenen Master-Passwort
+        if not kp_handler.open_database(master_password):
+            raise Exception("Konnte die KeePass-Datenbank nicht öffnen")
+        
+        # Lade die Credentials für verschiedene Dienste
+        credentials = {}
+        
+        # DHL Credentials
+        dhl_username, dhl_password = kp_handler.get_credentials("DHL API Zugangsdaten")
+        if dhl_username and dhl_password:
+            credentials['dhl_username'] = dhl_username
+            credentials['dhl_password'] = dhl_password
+        
+        # DHL Client Credentials
+        dhl_client_id, dhl_client_secret = kp_handler.get_credentials("DHL Client Credentials")
+        if dhl_client_id and dhl_client_secret:
+            credentials['dhl_client_id'] = dhl_client_id
+            credentials['dhl_client_secret'] = dhl_client_secret
+        
+        # DHL Billing Number
+        dhl_billing, _ = kp_handler.get_credentials("DHL Billing")
+        if dhl_billing:
+            credentials['dhl_billing_number'] = dhl_billing
+        
+        # Zendesk Credentials
+        zendesk_email, zendesk_token = kp_handler.get_credentials("Zendesk API Token")
+        if zendesk_email and zendesk_token:
+            credentials['zendesk_email'] = zendesk_email
+            credentials['zendesk_token'] = zendesk_token
+        
+        # Billbee Credentials
+        billbee_api_key, billbee_api_user = kp_handler.get_credentials("BillBee API Key")
+        if billbee_api_key and billbee_api_user:
+            credentials['billbee_api_key'] = billbee_api_key
+            credentials['billbee_api_user'] = billbee_api_user
+        
+        billbee_password, _ = kp_handler.get_credentials("BillBee Basic Auth")
+        if billbee_password:
+            credentials['billbee_api_password'] = billbee_password
+        
+        return credentials
+        
+    except Exception as e:
+        raise Exception(f"Fehler beim Laden der Credentials: {str(e)}")

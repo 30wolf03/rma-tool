@@ -21,10 +21,25 @@ def show_error_message(message):
 
 def get_database_path():
     if getattr(sys, "frozen", False):
-        base_path = sys._MEIPASS
+        # Wenn die Anwendung als ausführbare Datei läuft
+        base_path = os.path.dirname(sys.executable)
+        internal_path = os.path.join(base_path, "_internal")
+        return os.path.join(internal_path, "DHL_Label_Generator_secrets.kdbx")
     else:
+        # Wenn die Anwendung im Entwicklungsmodus läuft
         base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, "DHL_Label_Generator_secrets.kdbx")
+        return os.path.join(base_path, "DHL_Label_Generator_secrets.kdbx")
+
+def get_style_path():
+    if getattr(sys, "frozen", False):
+        # Wenn die Anwendung als ausführbare Datei läuft
+        base_path = os.path.dirname(sys.executable)
+        internal_path = os.path.join(base_path, "_internal")
+        return os.path.join(internal_path, "global_style.qss")
+    else:
+        # Wenn die Anwendung im Entwicklungsmodus läuft
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base_path, "global_style.qss")
 
 def main():
     try:
@@ -39,13 +54,16 @@ def main():
         app = QApplication(sys.argv)
         app.setWindowIcon(QIcon(":/icons/icon.ico"))
 
-        stylesheet_path = ":/global_style.qss"
-        qss_file = QFile(stylesheet_path)
-        if qss_file.open(QFile.ReadOnly | QFile.Text):
-            stylesheet = str(qss_file.readAll(), encoding="utf-8")
-            app.setStyleSheet(stylesheet)
+        # Lade das Stylesheet
+        style_path = get_style_path()
+        logger.info(f"Stylesheet-Pfad: {style_path}")
+        
+        if os.path.exists(style_path):
+            with open(style_path, "r", encoding='utf-8') as f:
+                app.setStyleSheet(f.read())
+                logger.info("Stylesheet erfolgreich geladen")
         else:
-            logger.error("Das Stylesheet konnte nicht geladen werden.")
+            logger.error(f"Stylesheet nicht gefunden: {style_path}")
 
         logger.info("Initialisiere KeePass Handler")
         login_window = LoginWindow(kp_handler)
@@ -128,31 +146,25 @@ def main():
 
         main_window = DHLLabelGenerator()
         main_window.setWindowIcon(QIcon(":/icons/icon.ico"))
+        
+        # Setze die geladenen Credentials direkt
         main_window.username = dhl_api_username
         main_window.password = dhl_api_password
-        main_window.zendesk_email = zendesk_email
-        main_window.zendesk_token = zendesk_token
         main_window.client_id = client_id
         main_window.client_secret = client_secret
+        main_window.zendesk_email = zendesk_email
+        main_window.zendesk_token = zendesk_token
         main_window.bb_api_key = bb_api_key
         main_window.bb_api_user = bb_api_user
         main_window.bb_api_password = bb_api_password
         main_window.billing_number = billing_number
-
+        
         main_window.show()
         sys.exit(app.exec_())
-
     except Exception as e:
-        with open("dhl_crash.log", 'w', encoding='utf-8') as f:
-            f.write(f"Kritischer Fehler: {str(e)}\n")
-            f.write(traceback.format_exc())
+        logger.error(f"Fehler beim Starten der Anwendung: {str(e)}")
+        show_error_message(f"Fehler beim Starten der Anwendung: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        with open("dhl_critical.log", 'w', encoding='utf-8') as f:
-            f.write(f"Kritischer Fehler außerhalb der main()-Funktion: {str(e)}\n")
-            f.write(traceback.format_exc())
-        sys.exit(1)
+    main()
