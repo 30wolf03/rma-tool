@@ -164,6 +164,10 @@ class DHLLabelGenerator(QMainWindow):
             # Log Bereich
             self.log_text = QTextEdit()
             self.log_text.setReadOnly(True)
+            
+            # Füge den GUI-Handler zum Logger hinzu
+            from utils import add_gui_handler
+            self.logger = add_gui_handler(self.log_text)
 
             # Button Layout
             button_layout = QHBoxLayout()
@@ -306,18 +310,29 @@ class DHLLabelGenerator(QMainWindow):
             self.generate_button.setEnabled(False)
             self.email_button.setEnabled(False)
             self.extract_serial_button.setEnabled(False)
-            self.logger.info("Buttons deaktiviert")
+            self.logger.info("Buttons deaktiviert, bitte einen Typ auswählen")
             self.logger.info("-" * 80)
-            self.log_text.append("Buttons deaktiviert, bitte einen Typ auswählen")
         else:
             self.generate_button.setEnabled(True)
             self.email_button.setEnabled(True)
             self.extract_serial_button.setEnabled(True)
-            self.logger.info("Buttons aktiviert")
+            self.logger.info("Typ ausgewählt, Buttons aktiviert")
             self.logger.info("-" * 80)
-            self.log_text.append("Typ ausgewählt, Buttons aktiviert")
     
-    def fetch_orders(self):
+    def fetch_orders(self) -> None:
+        """
+        Ruft alle Bestellungen für eine E-Mail-Adresse von Billbee ab.
+
+        Diese Methode:
+        1. Prüft ob eine E-Mail-Adresse eingegeben wurde
+        2. Initialisiert die Billbee-API mit den gespeicherten Zugangsdaten
+        3. Ruft alle Bestellungen für diese E-Mail ab
+        4. Befüllt das Bestellungen-Dropdown mit den gefundenen Daten
+        5. Zeigt Gewicht und Seriennummer (falls vorhanden) in der Bestellübersicht
+
+        Returns:
+            None
+        """
         email = self.email_input.text().strip()
         if not email:
             QMessageBox.warning(self, "Fehler", "Bitte eine E-Mail-Adresse eingeben.")
@@ -333,13 +348,18 @@ class DHLLabelGenerator(QMainWindow):
 
             self.orders_dropdown.clear()
             self.orders_dropdown.addItem("- Bitte auswählen -")
+            
             if orders:
                 for order in orders:
                     order_number = order.get("OrderNumber", "Unbekannt")
                     weight_kg = order.get("ShipWeightKg")
+                    
                     if weight_kg is not None:
                         weight_gram = int(float(weight_kg) * 1000)
-                        order_text = f"Bestellnummer: {order_number} - Gewicht: {weight_gram}g"
+                        order_text = (
+                            f"Bestellnummer: {order_number} - "
+                            f"Gewicht: {weight_gram}g"
+                        )
                     else:
                         order_text = f"Bestellnummer: {order_number}"
 
@@ -351,21 +371,27 @@ class DHLLabelGenerator(QMainWindow):
                             order_text += f" - Seriennummer: {serial_number}"
 
                     self.orders_dropdown.addItem(order_text, order)
-                self.log_text.append(
-                    f"{len(orders)} Bestellungen erfolgreich geladen. Bitte wählen Sie eine Bestellung aus."
-                )
-                self.logger.info(f"Bestellungen erfolgreich geladen: {len(orders)}")
+                    
+                self.logger.info(f"{len(orders)} Bestellungen erfolgreich geladen")
                 self.logger.info("-" * 80)
-                # Dropdown kurz grün aufleuchten lassen:
+                
+                # Dropdown kurz grün aufleuchten lassen
                 self.orders_dropdown.setStyleSheet("background-color: lightgreen;")
-                QTimer.singleShot(2000, lambda: self.orders_dropdown.setStyleSheet(""))
+                QTimer.singleShot(
+                    2000, 
+                    lambda: self.orders_dropdown.setStyleSheet("")
+                )
             else:
                 QMessageBox.warning(self, "Fehler", "Keine Bestellungen gefunden.")
-                self.log_text.append("Keine Bestellungen gefunden.")
-                self.logger.info("Keine Bestellungen gefunden.")
+                self.logger.info("Keine Bestellungen gefunden")
                 self.logger.info("-" * 80)
+                
         except Exception as e:
-            QMessageBox.warning(self, "Fehler", f"Fehler beim Abrufen der Bestellungen: {str(e)}")
+            QMessageBox.warning(
+                self, 
+                "Fehler", 
+                f"Fehler beim Abrufen der Bestellungen: {str(e)}"
+            )
 
     def on_order_selected(self, index):
         if index == 0:  # Platzhalter ignorieren
@@ -403,10 +429,10 @@ class DHLLabelGenerator(QMainWindow):
             # Nur übernehmen, wenn das Gewicht > 1000g ist, ansonsten das Feld leer lassen
             if weight_gram is not None and weight_gram > 1000:
                 self.weight_input.setText(str(weight_gram))
-                self.log_text.append(f"Gewicht aus Bestellung übernommen: {weight_gram}g")
+                self.logger.info(f"Gewicht aus Bestellung übernommen: {weight_gram}g")
             else:
                 self.weight_input.clear()
-                self.log_text.append("Bestellgewicht < 1000g, Standardgewicht wird verwendet.")
+                self.logger.info("Bestellgewicht < 1000g, Standardgewicht wird verwendet.")
             
             # Kombiniere Vor- und Nachname, sofern vorhanden
             firstname = shipping_address.get("FirstName", "")
@@ -423,7 +449,7 @@ class DHLLabelGenerator(QMainWindow):
                 phone = ""
             self.phone_input.setText(str(phone))
             
-            self.log_text.append(f"Adressdaten aus Bestellung übernommen: {full_name}, {shipping_address.get('Street', '')} {shipping_address.get('HouseNumber', '')}, {shipping_address.get('Zip', '')} {shipping_address.get('City', '')}")
+            self.logger.info(f"Adressdaten aus Bestellung übernommen: {full_name}, {shipping_address.get('Street', '')} {shipping_address.get('HouseNumber', '')}, {shipping_address.get('Zip', '')} {shipping_address.get('City', '')}")
             
             # Extrahiere die Seriennummer aus den Notizen
             notes = selected_order.get("SellerComment", "")
@@ -438,14 +464,14 @@ class DHLLabelGenerator(QMainWindow):
                 
                 serial_number = self.bb_api.extract_serial_number(notes)
                 if serial_number:
-                    self.log_text.append(f"Seriennummer gefunden: {serial_number}")
+                    self.logger.info(f"Seriennummer gefunden: {serial_number}")
                     # Aktualisiere das Referenzfeld mit der Seriennummer
                     self.update_reference_field(serial_number)
                 else:
-                    self.log_text.append("Keine Seriennummer in den Notizen gefunden")
+                    self.logger.info("Keine Seriennummer in den Notizen gefunden")
                     self.update_reference_field()
             else:
-                self.log_text.append("Keine Notizen für die Bestellung gefunden")
+                self.logger.info("Keine Notizen für die Bestellung gefunden")
                 self.update_reference_field()
 
     def get_zendesk_email(self):
@@ -455,18 +481,18 @@ class DHLLabelGenerator(QMainWindow):
                 email = get_customer_email(ticket_id, self.zendesk_email, self.zendesk_token)
                 if email:
                     self.email_input.setText(email)
-                    self.log_text.append(f"E-Mail für Ticket {ticket_id} erfolgreich abgerufen")
-                    self.logger.info(f"E-Mail-Adresse für Ticket {ticket_id}: {email}")
+                    self.logger.info(f"E-Mail für Ticket {ticket_id} erfolgreich abgerufen: {email}")
+                    self.logger.info("-" * 80)
                 else:
                     QMessageBox.warning(self, "Fehler", "E-Mail-Adresse konnte nicht gefunden werden")
             except Exception as e:
                 QMessageBox.warning(self, "Fehler", str(e))
-                self.log_text.append(f"Fehler beim Abrufen der E-Mail: {str(e)}")
                 self.logger.error(f"Fehler beim Abrufen der E-Mail: {str(e)}")
+                self.logger.info("-" * 80)
         else:
             QMessageBox.warning(self, "Fehler", "Bitte eine Ticket-Nr. eingeben")
-        self.logger.info("-" * 80)
-            
+            self.logger.info("-" * 80)
+
     def handle_email_enter(self):
         """Behandelt Enter-Taste im E-Mail-Feld"""
         if not self.email_input.text():
@@ -506,18 +532,24 @@ class DHLLabelGenerator(QMainWindow):
                     # Speichere das komplette Address-Dictionary als "userData" im Combo-Box-Item
                     self.address_dropdown.addItem(display_text, addr)
 
-                self.log_text.append("Adressen von Billbee erfolgreich geladen. Bitte wählen Sie eine Adresse aus.")
+                self.logger.info("Adressen von Billbee erfolgreich geladen. Bitte wählen Sie eine Adresse aus.")
             else:
                 QMessageBox.warning(self, "Fehler", "Keine Kundendaten gefunden")
         except Exception as e:
             QMessageBox.warning(self, "Fehler", str(e))
-            self.log_text.append(f"Fehler beim Laden der Adressdaten: {str(e)}")
+            self.logger.error(f"Fehler beim Laden der Adressdaten: {str(e)}")
 
-    def fetch_customer_data(self):
+    def fetch_customer_data(self) -> None:
         """
         Kombiniert den Abruf der E-Mail-Adresse aus Zendesk und der Bestellungen aus Billbee.
-        Beim Klick auf den Button wird zuerst die E-Mail-Adresse anhand der Ticketnummer geholt.
-        Danach werden alle zu dieser E-Mail gehörenden Bestellungen aus Billbee abgerufen und in das Dropdown eingefügt.
+
+        Diese Methode führt folgende Schritte aus:
+        1. Abruf der E-Mail-Adresse anhand der Ticketnummer aus Zendesk
+        2. Abruf aller Bestellungen zu dieser E-Mail aus Billbee
+        3. Befüllung des Bestellungen-Dropdowns mit den gefundenen Daten
+
+        Returns:
+            None
         """
         ticket_id = self.ticket_nr_input.text().strip()
         if not ticket_id:
@@ -526,17 +558,27 @@ class DHLLabelGenerator(QMainWindow):
 
         # Abruf der E-Mail-Adresse über Zendesk
         try:
+            self.logger.info(f"Versuche E-Mail-Adresse für Ticket {ticket_id} abzurufen")
+            self.logger.info("-" * 80)
             email = get_customer_email(ticket_id, self.zendesk_email, self.zendesk_token)
-            self.logger.info(f"E-Mail-Adresse für Ticket {ticket_id}: {email}")
             if not email:
-                QMessageBox.warning(self, "Fehler", f"Keine E-Mail-Adresse zu Ticket #{ticket_id} gefunden")
-                self.log_text.append(f"Keine E-Mail-Adresse zu Ticket {ticket_id} gefunden")
+                QMessageBox.warning(
+                    self, 
+                    "Fehler", 
+                    f"Keine E-Mail-Adresse zu Ticket #{ticket_id} gefunden"
+                )
+                self.logger.info(f"Keine E-Mail-Adresse zu Ticket {ticket_id} gefunden")
+                self.logger.info("-" * 80)
                 return
             self.email_input.setText(email)
-            self.log_text.append(f"E-Mail-Adresse für Ticket {ticket_id} erfolgreich abgerufen: {email}")
+            self.logger.info(
+                f"E-Mail-Adresse für Ticket {ticket_id} erfolgreich abgerufen: {email}"
+            )
+            self.logger.info("-" * 80)
         except Exception as e:
             QMessageBox.warning(self, "Fehler", f"Fehler beim Abrufen der E-Mail: {str(e)}")
-            self.log_text.append(f"Fehler beim Abrufen der E-Mail: {str(e)}")
+            self.logger.error(f"Fehler beim Abrufen der E-Mail: {str(e)}")
+            self.logger.info("-" * 80)
             return
         
         # Abruf der Bestellungen aus Billbee basierend auf der abgerufenen E-Mail
@@ -814,9 +856,9 @@ class DHLLabelGenerator(QMainWindow):
                             if serial_number:
                                 # Aktualisiere das Seriennummer-Feld im Zendesk-Ticket
                                 if update_serial_number(ticket_id, self.zendesk_email, self.zendesk_token, serial_number):
-                                    self.log_text.append(f"Seriennummer {serial_number} zu Zendesk-Ticket {ticket_id} hinzugefügt")
+                                    self.logger.info(f"Seriennummer {serial_number} zu Zendesk-Ticket {ticket_id} hinzugefügt")
                                 else:
-                                    self.log_text.append("Fehler beim Aktualisieren der Seriennummer im Zendesk-Ticket")
+                                    self.logger.info("Fehler beim Aktualisieren der Seriennummer im Zendesk-Ticket")
 
                         # Hole Bestellnummer und -datum
                         order_number = selected_order.get("OrderNumber", "")
@@ -835,20 +877,20 @@ class DHLLabelGenerator(QMainWindow):
 
                         # Aktualisiere das Bestellfeld im Zendesk-Ticket
                         if update_order_info(ticket_id, self.zendesk_email, self.zendesk_token, order_text):
-                            self.log_text.append(f"Bestellinformationen zu Zendesk-Ticket {ticket_id} hinzugefügt")
+                            self.logger.info(f"Bestellinformationen zu Zendesk-Ticket {ticket_id} hinzugefügt")
                         else:
-                            self.log_text.append("Fehler beim Aktualisieren der Bestellinformationen im Zendesk-Ticket")
+                            self.logger.info("Fehler beim Aktualisieren der Bestellinformationen im Zendesk-Ticket")
 
                 fields_update = {
                     18851720152732: shipment_no,  # Trackingnummer
                     7566313720220: self.name_input.text().strip()    # Bestellname
                 }
                 if self.update_zendesk_ticket_fields(ticket_id, fields_update):
-                    self.log_text.append(
+                    self.logger.info(
                         f"Sendungsnr {shipment_no} und Bestellname '{self.name_input.text().strip()}' zu Zendesk-Ticket {ticket_id} hinzugefügt"
                     )
                 else:
-                    self.log_text.append("Fehler beim Aktualisieren des Zendesk-Tickets")
+                    self.logger.info("Fehler beim Aktualisieren des Zendesk-Tickets")
 
             # Zeige Erfolgsmeldung
             success_message = f"Label erfolgreich erstellt!\nSendungsnummer: {shipment_no}"
@@ -935,9 +977,9 @@ class DHLLabelGenerator(QMainWindow):
             if serial_number:
                 # Setze die Seriennummer in das Problembeschreibungsfeld
                 self.problem_description.setText(f"Seriennummer: {serial_number}")
-                self.log_text.append(f"\nSeriennummer gefunden: {serial_number}")
+                self.logger.info(f"\nSeriennummer gefunden: {serial_number}")
             else:
-                self.log_text.append("\nKeine Seriennummer in den Notizen gefunden")
+                self.logger.info("\nKeine Seriennummer in den Notizen gefunden")
 
         except Exception as e:
             self.logger.error(f"Fehler beim Abrufen der Notizen: {str(e)}")

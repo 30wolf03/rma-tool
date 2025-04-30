@@ -5,6 +5,7 @@ import logging
 import traceback
 from io import StringIO
 from datetime import datetime
+from PyQt5.QtWidgets import QTextEdit
 
 
 class BlockFormatter(logging.Formatter):
@@ -158,7 +159,6 @@ def clear_all_fields(window):
     else:
         log.warning("orders_dropdown nicht gefunden")
 
-    window.log_text.append("Alle Felder wurden geleert")
     log.info("Alle Felder wurden geleert")
 
 
@@ -190,3 +190,37 @@ class StreamRedirector(StringIO):
 
     def flush(self):
         pass
+
+
+class GUIHandler(logging.Handler):
+    """Handler für das Loggen in ein QTextEdit Widget."""
+    def __init__(self, text_widget: QTextEdit):
+        super().__init__()
+        self.text_widget = text_widget
+        self.formatter = BlockFormatter(datefmt='%Y-%m-%d %H:%M:%S')
+
+    def emit(self, record):
+        try:
+            msg = self.formatter.format(record)
+            self.text_widget.append(msg)
+            # Scrolle automatisch zum Ende
+            self.text_widget.verticalScrollBar().setValue(
+                self.text_widget.verticalScrollBar().maximum()
+            )
+        except Exception:
+            self.handleError(record)
+
+
+def add_gui_handler(text_widget: QTextEdit):
+    """Fügt einen GUI-Handler zum Logger hinzu."""
+    logger = get_logger()
+    # Entferne existierende GUI-Handler
+    for handler in logger.handlers[:]:
+        if isinstance(handler, GUIHandler):
+            logger.removeHandler(handler)
+    
+    # Füge neuen GUI-Handler hinzu
+    gui_handler = GUIHandler(text_widget)
+    gui_handler.setLevel(logging.INFO)
+    logger.addHandler(gui_handler)
+    return logger
