@@ -215,11 +215,13 @@ class DHLAPI:
 
     def create_shipment_payload(self, shipper, reference, weight_value):
         """Erstellt den Payload für die DHL API."""
-        # Stelle sicher, dass das Gewicht als Integer formatiert wird
+        # Stelle sicher, dass das Gewicht als Integer formatiert wird und mindestens 1000g beträgt
         try:
             weight_value = int(float(weight_value))
+            if weight_value < 1000:
+                weight_value = 1000
         except (ValueError, TypeError):
-            raise ValueError("Ungültiges Gewicht")
+            weight_value = 1000  # Standardgewicht bei ungültiger Eingabe
         
         payload = {
             "profile": "STANDARD_GRUPPENPROFIL",

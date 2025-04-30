@@ -108,10 +108,17 @@ def validate_inputs(input_fields):
         return False
 
     try:
-        weight = float(input_fields.get('weight', '0'))
-        if weight <= 0:
-            log.error("Ungültiges Gewicht")
-            return False
+        weight_text = input_fields.get('weight', '')
+        if not weight_text:
+            # Wenn kein Gewicht angegeben, setze Standardgewicht
+            input_fields['weight'] = '1000'
+            weight = 1000
+        else:
+            weight = float(weight_text)
+            if weight < 1000:
+                # Wenn Gewicht unter 1000g, setze Standardgewicht
+                input_fields['weight'] = '1000'
+                weight = 1000
     except ValueError:
         log.error("Gewicht muss eine Zahl sein")
         return False
