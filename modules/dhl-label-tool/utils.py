@@ -24,17 +24,28 @@ class BlockFormatter(logging.Formatter):
 class LogBlock:
     """
     Kontextmanager zur Aggregation mehrerer Logmeldungen in einem
-    gemeinsamen Block.
+    gemeinsamen Block mit klarer visueller Trennung.
     """
-    def __init__(self, logger, level=logging.INFO):
+    def __init__(self, logger, title=None, level=logging.INFO):
         self.logger = logger
         self.level = level
+        self.title = title
 
     def __enter__(self):
+        if self.title:
+            self.logger.log(self.level, "-" * 80)
+            self.logger.log(self.level, f"=== {self.title} ===")
         return self
 
     def __exit__(self, exc_type, exc_value, tb):
-        self.logger.log(self.level, "-" * 80)
+        if exc_type is not None:
+            self.logger.error(f"Fehler in {self.title if self.title else 'Block'}: {str(exc_value)}")
+        if self.title:
+            self.logger.log(self.level, "-" * 80)
+
+    def section(self, title):
+        """Erstellt eine neue Sektion innerhalb des Blocks."""
+        self.logger.log(self.level, f"--- {title} ---")
 
     def __call__(self, message):
         self.logger.log(self.level, message)
@@ -75,7 +86,8 @@ def setup_logger():
         logger.setLevel(logging.DEBUG)
         
         # Logge den Start der Anwendung
-        logger.info(f"Anwendung gestartet. Log-Datei: {log_filepath}")
+        with LogBlock(logger, "Anwendungsstart"):
+            logger.info(f"Log-Datei: {log_filepath}")
     return logger
 
 

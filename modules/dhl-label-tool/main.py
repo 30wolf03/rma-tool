@@ -44,123 +44,123 @@ def get_style_path():
 def main():
     try:
         logger = setup_logger()
-        logger.info("Anwendung wird gestartet")
-
-        # Verwende die bereits definierte Funktion zur Pfadermittlung
-        database_path = get_database_path()
-        logger.info(f"Datenbank-Pfad: {database_path}")
-
-        kp_handler = KeePassHandler(database_path)
-        app = QApplication(sys.argv)
-        app.setWindowIcon(QIcon(":/icons/icon.ico"))
-
-        # Lade das Stylesheet
-        style_path = get_style_path()
-        logger.info(f"Stylesheet-Pfad: {style_path}")
         
-        if os.path.exists(style_path):
-            with open(style_path, "r", encoding='utf-8') as f:
-                app.setStyleSheet(f.read())
-                logger.info("Stylesheet erfolgreich geladen")
-        else:
-            logger.error(f"Stylesheet nicht gefunden: {style_path}")
+        with LogBlock(logger, "Initialisierung") as log:
+            # Verwende die bereits definierte Funktion zur Pfadermittlung
+            database_path = get_database_path()
+            log("Datenbank-Pfad: " + database_path)
 
-        logger.info("Initialisiere KeePass Handler")
-        login_window = LoginWindow(kp_handler)
-        if login_window.exec_() != QDialog.Accepted:
-            sys.exit(0)
+            kp_handler = KeePassHandler(database_path)
+            app = QApplication(sys.argv)
+            app.setWindowIcon(QIcon(":/icons/icon.ico"))
 
-        try:
-            logger.info("Lade DHL API Zugangsdaten")
-            dhl_api_username, dhl_api_password = kp_handler.get_credentials("DHL API Zugangsdaten")
-            logger.info("DHL API Zugangsdaten geladen")
-            if not all([dhl_api_username, dhl_api_password]):
-                show_error_message("Fehler: DHL API Zugangsdaten (Username/Password) konnten nicht geladen werden.")
+            # Lade das Stylesheet
+            style_path = get_style_path()
+            log.section("Stylesheet")
+            log("Stylesheet-Pfad: " + style_path)
+            
+            if os.path.exists(style_path):
+                with open(style_path, "r", encoding='utf-8') as f:
+                    app.setStyleSheet(f.read())
+                    log("Stylesheet erfolgreich geladen")
+            else:
+                logger.error("Stylesheet nicht gefunden: " + style_path)
+
+            log.section("KeePass")
+            log("Initialisiere KeePass Handler")
+            
+            login_window = LoginWindow(kp_handler)
+            if login_window.exec_() != QDialog.Accepted:
+                sys.exit(0)
+
+        with LogBlock(logger, "API Zugangsdaten") as log:
+            try:
+                log.section("DHL API")
+                dhl_api_username, dhl_api_password = kp_handler.get_credentials("DHL API Zugangsdaten")
+                log("DHL API Zugangsdaten geladen")
+                if not all([dhl_api_username, dhl_api_password]):
+                    show_error_message("Fehler: DHL API Zugangsdaten (Username/Password) konnten nicht geladen werden.")
+                    sys.exit(1)
+            except Exception as e:
+                logger.error(f"Fehler beim Laden der DHL API Zugangsdaten: {str(e)}")
+                show_error_message(f"Fehler beim Laden der DHL API Zugangsdaten: {str(e)}")
                 sys.exit(1)
-        except Exception as e:
-            logger.error(f"Fehler beim Laden der DHL API Zugangsdaten: {str(e)}")
-            show_error_message(f"Fehler beim Laden der DHL API Zugangsdaten: {str(e)}")
-            sys.exit(1)
 
-        try:
-            logger.info("Lade DHL Client Credentials")
-            client_id, client_secret = kp_handler.get_credentials("DHL Client Credentials")
-            logger.info("DHL Client Credentials geladen")
-            if not all([client_id, client_secret]):
-                show_error_message("Fehler: DHL Client Credentials (ID/Secret) konnten nicht geladen werden.")
+            try:
+                log.section("DHL Client")
+                client_id, client_secret = kp_handler.get_credentials("DHL Client Credentials")
+                log("DHL Client Credentials geladen")
+                if not all([client_id, client_secret]):
+                    show_error_message("Fehler: DHL Client Credentials (ID/Secret) konnten nicht geladen werden.")
+                    sys.exit(1)
+            except Exception as e:
+                logger.error(f"Fehler beim Laden der DHL Client Credentials: {str(e)}")
+                show_error_message(f"Fehler beim Laden der DHL Client Credentials: {str(e)}")
                 sys.exit(1)
-        except Exception as e:
-            logger.error(f"Fehler beim Laden der DHL Client Credentials: {str(e)}")
-            show_error_message(f"Fehler beim Laden der DHL Client Credentials: {str(e)}")
-            sys.exit(1)
 
-        try:
-            logger.info("Lade Zendesk API Zugangsdaten")
-            zendesk_email, zendesk_token = kp_handler.get_credentials("Zendesk API Token")
-            logger.info("Zendesk API Zugangsdaten geladen")
-            if not all([zendesk_email, zendesk_token]):
-                show_error_message("Fehler: Zendesk API Zugangsdaten (Email/Token) konnten nicht geladen werden.")
+            try:
+                log.section("Zendesk")
+                zendesk_email, zendesk_token = kp_handler.get_credentials("Zendesk API Token")
+                log("Zendesk API Zugangsdaten geladen")
+                if not all([zendesk_email, zendesk_token]):
+                    show_error_message("Fehler: Zendesk API Zugangsdaten (Email/Token) konnten nicht geladen werden.")
+                    sys.exit(1)
+            except Exception as e:
+                logger.error(f"Fehler beim Laden der Zendesk API Zugangsdaten: {str(e)}")
+                show_error_message(f"Fehler beim Laden der Zendesk API Zugangsdaten: {str(e)}")
                 sys.exit(1)
-        except Exception as e:
-            logger.error(f"Fehler beim Laden der Zendesk API Zugangsdaten: {str(e)}")
-            show_error_message(f"Fehler beim Laden der Zendesk API Zugangsdaten: {str(e)}")
-            sys.exit(1)
 
-        try:
-            logger.info("Lade Billbee API Key")
-            bb_api_key = kp_handler.get_credentials("BillBee API Key")[1]
-            logger.info("Billbee API Key geladen")
-            if not bb_api_key:
-                show_error_message("Fehler: Billbee API Key konnte nicht geladen werden.")
+            try:
+                log.section("Billbee")
+                bb_api_key = kp_handler.get_credentials("BillBee API Key")[1]
+                log("Billbee API Key geladen")
+                if not bb_api_key:
+                    show_error_message("Fehler: Billbee API Key konnte nicht geladen werden.")
+                    sys.exit(1)
+
+                bb_auth = kp_handler.get_credentials("BillBee Basic Auth")
+                bb_api_user = bb_auth[0]
+                bb_api_password = bb_auth[1]
+                log("Billbee Basic Auth Daten geladen")
+                if not all([bb_api_user, bb_api_password]):
+                    show_error_message("Fehler: Billbee Basic Auth Daten konnten nicht geladen werden.")
+                    sys.exit(1)
+            except Exception as e:
+                logger.error(f"Fehler beim Laden der Billbee Zugangsdaten: {str(e)}")
+                show_error_message(f"Fehler beim Laden der Billbee Zugangsdaten: {str(e)}")
                 sys.exit(1)
-        except Exception as e:
-            logger.error(f"Fehler beim Laden des Billbee API Keys: {str(e)}")
-            show_error_message(f"Fehler beim Laden des Billbee API Keys: {str(e)}")
-            sys.exit(1)
 
-        try:
-            logger.info("Lade Billbee Basic Auth Daten")
-            bb_auth = kp_handler.get_credentials("BillBee Basic Auth")
-            bb_api_user = bb_auth[0]
-            bb_api_password = bb_auth[1]
-            logger.info("Billbee Basic Auth Daten geladen")
-            if not all([bb_api_user, bb_api_password]):
-                show_error_message("Fehler: Billbee Basic Auth Daten konnten nicht geladen werden.")
+            try:
+                log.section("DHL Billing")
+                billing_number = kp_handler.get_credentials("DHL Billing")[0]
+                log("DHL Billing Number geladen")
+                if not billing_number:
+                    show_error_message("Fehler: DHL Billing Number konnte nicht geladen werden.")
+                    sys.exit(1)
+            except Exception as e:
+                logger.error(f"Fehler beim Laden der DHL Billing Number: {str(e)}")
+                show_error_message(f"Fehler beim Laden der DHL Billing Number: {str(e)}")
                 sys.exit(1)
-        except Exception as e:
-            logger.error(f"Fehler beim Laden der Billbee Basic Auth Daten: {str(e)}")
-            show_error_message(f"Fehler beim Laden der Billbee Basic Auth Daten: {str(e)}")
-            sys.exit(1)
 
-        try:
-            logger.info("Lade DHL Billing Number")
-            billing_number = kp_handler.get_credentials("DHL Billing")[0]
-            logger.info("DHL Billing Number geladen")
-            if not billing_number:
-                show_error_message("Fehler: DHL Billing Number konnte nicht geladen werden.")
-                sys.exit(1)
-        except Exception as e:
-            logger.error(f"Fehler beim Laden der DHL Billing Number: {str(e)}")
-            show_error_message(f"Fehler beim Laden der DHL Billing Number: {str(e)}")
-            sys.exit(1)
-
-        main_window = DHLLabelGenerator()
-        main_window.setWindowIcon(QIcon(":/icons/icon.ico"))
-        
-        # Setze die geladenen Credentials direkt
-        main_window.username = dhl_api_username
-        main_window.password = dhl_api_password
-        main_window.client_id = client_id
-        main_window.client_secret = client_secret
-        main_window.zendesk_email = zendesk_email
-        main_window.zendesk_token = zendesk_token
-        main_window.bb_api_key = bb_api_key
-        main_window.bb_api_user = bb_api_user
-        main_window.bb_api_password = bb_api_password
-        main_window.billing_number = billing_number
-        
-        main_window.show()
-        sys.exit(app.exec_())
+        with LogBlock(logger, "Anwendungsstart") as log:
+            main_window = DHLLabelGenerator()
+            main_window.setWindowIcon(QIcon(":/icons/icon.ico"))
+            
+            # Setze die geladenen Credentials direkt
+            main_window.username = dhl_api_username
+            main_window.password = dhl_api_password
+            main_window.client_id = client_id
+            main_window.client_secret = client_secret
+            main_window.zendesk_email = zendesk_email
+            main_window.zendesk_token = zendesk_token
+            main_window.bb_api_key = bb_api_key
+            main_window.bb_api_user = bb_api_user
+            main_window.bb_api_password = bb_api_password
+            main_window.billing_number = billing_number
+            
+            log("Hauptfenster wird angezeigt")
+            main_window.show()
+            sys.exit(app.exec_())
     except Exception as e:
         logger.error(f"Fehler beim Starten der Anwendung: {str(e)}")
         show_error_message(f"Fehler beim Starten der Anwendung: {str(e)}")
