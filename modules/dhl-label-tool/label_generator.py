@@ -66,7 +66,7 @@ class DHLLabelGenerator(QMainWindow):
             self.logger.info("Starte Initialisierung der Anwendung")
             
             # Setze den Fenstertitel
-            self.setWindowTitle("DHL Label Tool 16")
+            self.setWindowTitle("DHL Label Tool 16.5")
             
             # API Credentials
             self.username = None
