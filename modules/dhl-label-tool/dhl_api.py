@@ -169,46 +169,33 @@ class DHLAPI:
             response = requests.post(url, json=payload, headers=headers)
             response_data = response.json()
             
-            # Bei Validierung: Prüfe auf weak validation errors
+            # Bei Validierung: Prüfe auf Validierungswarnungen
             if validate:
-                self.logger.info("Validierungsantwort von DHL API:")
-                self.logger.info(f"Status Code: {response.status_code}")
-                self.log_safe_data("Response Headers", dict(response.headers))
-                self.log_safe_data("Response Body", response_data)
-                
-                if response.status_code == 400:
-                    # Prüfe auf Validierungsmeldungen in den Items
-                    if "items" in response_data:
-                        for item in response_data["items"]:
-                            if "validationMessages" in item:
-                                for validation in item["validationMessages"]:
-                                    validation_message = validation.get("validationMessage", "")
-                                    if "street" in validation_message.lower():
-                                        raise ValueError("Die eingegebene Straße konnte nicht gefunden werden")
-                                    elif "postal" in validation_message.lower():
-                                        raise ValueError("Die Postleitzahl ist ungültig")
-                                    elif "city" in validation_message.lower():
-                                        raise ValueError("Die Stadt konnte nicht gefunden werden")
-                                    else:
-                                        raise ValueError("Die Adressdaten konnten nicht validiert werden")
-                    
-                    # Fallback für andere Fehler
+                if "status" in response_data:
                     error_detail = response_data.get("status", {}).get("detail", "")
-                    if "weak validation error" in error_detail:
-                        self.logger.warning(f"Schwache Validierungswarnung: {error_detail}")
-                        return response_data
-                    else:
-                        raise ValueError(f"Fehler bei der DHL API: {error_detail}")
-                elif response.status_code != 200:
-                    self.logger.error(f"API Fehler: {response.status_code} - {response.text}")
-                    raise ValueError("Die Adressvalidierung ist fehlgeschlagen")
+                    if error_detail:
+                        # Prüfe ob es sich um eine erfolgreiche Validierung handelt
+                        if "validated OK" in error_detail:
+                            self.logger.info(f"Validierung erfolgreich: {error_detail}")
+                            return response_data, None, None
+                        # Bei echten Fehlern
+                        elif "error" in error_detail.lower():
+                            self.logger.warning(f"Validierungsfehler: {error_detail}")
+                            return response_data, None, error_detail
+                return response_data, None, None
             # Bei Label-Erstellung: Nur auf echte Fehler prüfen
             else:
                 if response.status_code != 200:
                     self.logger.error(f"API Fehler: {response.status_code} - {response.text}")
                     raise ValueError("Die Label-Erstellung ist fehlgeschlagen")
                 
-            return response_data
+                # Extrahiere Tracking-Nummer und Label
+                if "items" in response_data and len(response_data["items"]) > 0:
+                    item = response_data["items"][0]
+                    shipment_no = item.get("shipmentNo")
+                    return response_data, shipment_no, None
+                else:
+                    raise ValueError("Keine Items in der API-Antwort")
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Label-Anfrage fehlgeschlagen: {str(e)}")
             raise ValueError("Die Verbindung zur DHL-API ist fehlgeschlagen")
@@ -282,16 +269,17 @@ class DHLAPI:
             # Erstelle das Payload für die DHL API
             payload = self.create_shipment_payload(sender_data, reference, weight)
             
-            # Sende die Anfrage an die DHL API
-            response_data = self.send_label_request(payload, validate)
+            # Sende Request und hole Tracking-Nummer
+            response_data, tracking_number, validation_warning = self.send_label_request(payload, validate=True)
             
-            # Bei Validierung: Prüfe auf Validierungswarnungen
-            if validate:
-                if "status" in response_data:
-                    error_detail = response_data.get("status", {}).get("detail", "")
-                    if error_detail:
-                        return None, None, error_detail
-                return None, None, None
+            # Prüfe auf Validierungswarnungen
+            if validation_warning:
+                self.logger.warning(f"Validierungswarnung: {validation_warning}")
+                raise ValueError(validation_warning)
+            
+            # Wenn keine Tracking-Nummer vorhanden, versuche es ohne Validierung
+            if not tracking_number:
+                response_data, tracking_number, _ = self.send_label_request(payload, validate=False)
             
             # Bei Label-Erstellung: Extrahiere die Sendungsnummer und das Label
             if "items" in response_data and len(response_data["items"]) > 0:

@@ -151,7 +151,7 @@ def clear_all_fields(window):
     fields_to_clear = [
         'name_input', 'street_input', 'house_input', 'additional_info_input',
         'postal_input', 'city_input', 'email_input', 'phone_input',
-        'ref_input', 'ticket_nr_input', 'weight_input'
+        'ref_input', 'ticket_nr_input', 'weight_input', 'problem_description'
     ]
     for field in fields_to_clear:
         if hasattr(window, field):

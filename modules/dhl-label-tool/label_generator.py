@@ -66,7 +66,7 @@ class DHLLabelGenerator(QMainWindow):
             self.logger.info("Starte Initialisierung der Anwendung")
             
             # Setze den Fenstertitel
-            self.setWindowTitle("DHL Label Tool 16.5")
+            self.setWindowTitle("DHL Label Tool 17")
             
             # API Credentials
             self.username = None
@@ -809,6 +809,7 @@ class DHLLabelGenerator(QMainWindow):
                 
             # Generiere das Label
             # Zuerst Validierung durchführen
+            self.logger.info("Starte Validierung der Adressdaten...")
             _, _, validation_warning = self.dhl_api.process_label_request(
                 sender_data=sender_data,
                 reference=reference,
@@ -816,8 +817,9 @@ class DHLLabelGenerator(QMainWindow):
                 validate=True  # Zuerst validieren
             )
 
-            # Prüfe auf Validierungswarnungen
+            # Wenn Validierungswarnung vorhanden, frage den Benutzer
             if validation_warning:
+                self.logger.warning(f"Validierungswarnung gefunden: {validation_warning}")
                 msg_box = QMessageBox()
                 msg_box.setWindowTitle("Adressvalidierung")
                 msg_box.setText(f"Die Adresse konnte nicht validiert werden: {validation_warning}\n\nTrotzdem fortfahren?")
@@ -827,14 +829,19 @@ class DHLLabelGenerator(QMainWindow):
                 msg_box.setDefaultButton(QMessageBox.No)
                 reply = msg_box.exec_()
                 if reply == QMessageBox.No:
+                    self.logger.info("Benutzer hat die Validierung abgebrochen")
                     return
+                self.logger.info("Benutzer hat trotz Validierungswarnung fortgefahren")
+            else:
+                self.logger.info("Validierung erfolgreich - keine Warnungen gefunden")
 
-            # Wenn Validierung erfolgreich war oder der Benutzer fortfahren möchte, Label generieren
+            # Label generieren (entweder nach erfolgreicher Validierung oder nach Benutzerbestätigung)
+            self.logger.info("Starte Label-Generierung...")
             shipment_no, label_b64, _ = self.dhl_api.process_label_request(
                 sender_data=sender_data,
                 reference=reference,
                 weight=weight,
-                validate=False  # Jetzt das Label generieren
+                validate=False  # Label generieren
             )
 
             # Speichere das Label
@@ -844,6 +851,14 @@ class DHLLabelGenerator(QMainWindow):
             # Aktualisiere die Zendesk Felder
             ticket_id = self.ticket_nr_input.text().strip()
             if ticket_id:
+                # Aktualisiere die Problembeschreibung
+                problem_description = self.problem_description.text().strip()
+                if problem_description:
+                    if update_problem_description(ticket_id, self.zendesk_email, self.zendesk_token, problem_description):
+                        self.logger.info(f"Problembeschreibung zu Zendesk-Ticket {ticket_id} hinzugefügt")
+                    else:
+                        self.logger.info("Fehler beim Aktualisieren der Problembeschreibung im Zendesk-Ticket")
+
                 # Hole die ausgewählte Bestellung
                 order_index = self.orders_dropdown.currentIndex()
                 if order_index > 0:  # Wenn eine Bestellung ausgewählt ist
@@ -871,7 +886,7 @@ class DHLLabelGenerator(QMainWindow):
                                 order_date = order_date.split('T')[0]  # Fallback: Nur das Datum ohne Zeit
 
                         # Erstelle den Bestelltext
-                        order_text = f"Bestellnummer: {order_number}"
+                        order_text = f"{order_number}"
                         if order_date:
                             order_text += f" vom {order_date}"
 

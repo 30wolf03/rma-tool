@@ -144,14 +144,29 @@ def update_order_info(ticket_id, email, api_token, order_text):
             'Content-Type': 'application/json'
         }
         
-        # Ticket aktualisieren
+        # Aktuelle Ticket-Daten abrufen
         url = f"https://ilockit.zendesk.com/api/v2/tickets/{ticket_id}.json"
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        ticket_data = response.json()
+        
+        # Aktuelle Bestellinformationen finden
+        current_order_info = ""
+        for field in ticket_data["ticket"]["custom_fields"]:
+            if field["id"] == 360009031520:
+                current_order_info = field.get("value", "")
+                break
+        
+        # Neue Bestellinformationen anhängen
+        new_order_info = f"{current_order_info}\n{order_text}" if current_order_info else order_text
+        
+        # Ticket aktualisieren
         data = {
             "ticket": {
                 "custom_fields": [
                     {
                         "id": 360009031520,
-                        "value": order_text
+                        "value": new_order_info
                     }
                 ]
             }
