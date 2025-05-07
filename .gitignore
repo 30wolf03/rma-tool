@@ -11,6 +11,8 @@
 *.json
 DHL Label *
 *.kdbx
+/release_*
+/modules/dhl-label-tool/release_*
 
 # Allgemeine Build-Artefakte
 node_modules/
