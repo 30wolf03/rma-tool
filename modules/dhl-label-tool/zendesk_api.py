@@ -157,6 +157,17 @@ def update_order_info(ticket_id, email, api_token, order_text):
                 current_order_info = field.get("value", "")
                 break
         
+        # Extrahiere die Bestellnummer aus dem neuen Text
+        new_order_number = order_text.split()[0]  # Nimmt den ersten Teil (die Bestellnummer)
+        
+        # Prüfe, ob die Bestellnummer bereits existiert
+        if current_order_info:
+            existing_orders = current_order_info.split('\n')
+            for order in existing_orders:
+                if order.strip().startswith(new_order_number):
+                    print(f"Bestellnummer {new_order_number} existiert bereits")
+                    return True
+        
         # Neue Bestellinformationen anhängen
         new_order_info = f"{current_order_info}\n{order_text}" if current_order_info else order_text
         
