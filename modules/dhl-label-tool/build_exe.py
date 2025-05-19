@@ -74,7 +74,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['icons\\\\icon.ico'],
+    icon=['icons\\icon.ico'],
 )
 coll = COLLECT(
     exe,
@@ -95,7 +95,7 @@ coll = COLLECT(
     # Führe PyInstaller mit der .spec-Datei aus
     subprocess.run(['pyinstaller', spec_file])
     
-    print(f"\nBuild abgeschlossen! Die Dateien befinden sich im Ordner: dist/{window_title}")
+    print(f"\nBuild abgeschlossen! Die Dateien befinden sich im Ordner: dist/{window_title}\n")
 
 if __name__ == '__main__':
     main() 
