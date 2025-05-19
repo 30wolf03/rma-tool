@@ -319,20 +319,7 @@ class DHLLabelGenerator(QMainWindow):
             self.logger.info("Typ ausgewählt, Buttons aktiviert")
             self.logger.info("-" * 80)
     
-    def fetch_orders(self) -> None:
-        """
-        Ruft alle Bestellungen für eine E-Mail-Adresse von Billbee ab.
-
-        Diese Methode:
-        1. Prüft ob eine E-Mail-Adresse eingegeben wurde
-        2. Initialisiert die Billbee-API mit den gespeicherten Zugangsdaten
-        3. Ruft alle Bestellungen für diese E-Mail ab
-        4. Befüllt das Bestellungen-Dropdown mit den gefundenen Daten
-        5. Zeigt Gewicht und Seriennummer (falls vorhanden) in der Bestellübersicht
-
-        Returns:
-            None
-        """
+    def fetch_orders(self):
         email = self.email_input.text().strip()
         if not email:
             QMessageBox.warning(self, "Fehler", "Bitte eine E-Mail-Adresse eingeben.")
@@ -342,7 +329,8 @@ class DHLLabelGenerator(QMainWindow):
             billbee = BillbeeAPI(
                 api_key=self.bb_api_key,
                 api_user=self.bb_api_user,
-                api_password=self.bb_api_password
+                api_password=self.bb_api_password,
+                parent_widget=self  # Übergebe das Hauptfenster als Parent-Widget
             )
             orders = billbee.get_all_customer_orders(email)
 
@@ -516,7 +504,8 @@ class DHLLabelGenerator(QMainWindow):
             billbee = BillbeeAPI(
                 api_key=self.bb_api_key,
                 api_user=self.bb_api_user,
-                api_password=self.bb_api_password
+                api_password=self.bb_api_password,
+                parent_widget=self  # Übergebe das Hauptfenster als Parent-Widget
             )
             addresses = billbee.get_all_customer_addresses(email)
             

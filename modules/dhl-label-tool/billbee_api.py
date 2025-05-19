@@ -3,10 +3,11 @@ import json
 import re
 from typing import Optional
 from utils import setup_logger, LogBlock
+from PyQt5.QtWidgets import QMessageBox
 
 
 class BillbeeAPI:
-    def __init__(self, api_key: str, api_user: str, api_password: str):
+    def __init__(self, api_key: str, api_user: str, api_password: str, parent_widget=None):
         self.logger = setup_logger()
         self.api_key = api_key
         self.api_user = api_user
@@ -17,6 +18,7 @@ class BillbeeAPI:
             "Content-Type": "application/json"
         }
         self.auth = (self.api_user, self.api_password)
+        self.parent_widget = parent_widget  # Speichere das Parent-Widget für Popups
 
         with LogBlock(self.logger, "Billbee API Initialisierung") as log:
             log("API Headers initialisiert")
@@ -109,41 +111,103 @@ class BillbeeAPI:
                 self.logger.error(f"Fehler beim Abrufen der Kundenadressen: {str(e)}")
                 return None
 
-    def get_all_customer_orders(self, email: str):
+    def get_all_customer_ids(self, email: str) -> list:
         """
-        Ruft die Bestellungen des Kunden anhand seiner E-Mail-Adresse ab.
-        Zuerst wird die Kunden-ID über get_customer_id ermittelt,
-        danach werden die Bestellungen über den entsprechenden Endpunkt abgerufen.
+        Ruft alle Kunden-IDs basierend auf der E-Mail-Adresse ab.
+        Gibt eine Liste aller gefundenen Kunden-IDs zurück.
+        Zeigt ein Popup an, wenn mehrere Kundenkonten gefunden werden.
         """
-        with LogBlock(self.logger, "Kundenbestellungen") as log:
-            customer_id = self.get_customer_id(email)
-            if not customer_id:
-                log("Keine Bestellungen, da keine Kunden-ID gefunden wurde!")
-                return None
-
-            log(f"Suche Bestellungen für Kunden-ID: {customer_id}")
-            orders_endpoint = f"{self.base_url}/customers/{customer_id}/orders"
-            
-            try:
-                response = requests.get(
-                    orders_endpoint,
+        try:
+            with LogBlock(self.logger, "Kundensuche") as log:
+                log(f"Suche Kunde anhand E-Mail: {email}")
+                
+                search_endpoint = f"{self.base_url}/search"
+                search_payload = {
+                    "type": ["customer"],
+                    "term": f'email:"{email}"'
+                }
+                
+                log.section("API Anfrage")
+                log("Sende Suchanfrage:")
+                log(json.dumps(search_payload, indent=2))
+                
+                response = requests.post(
+                    search_endpoint,
                     headers=self.headers,
-                    auth=self.auth
+                    auth=self.auth,
+                    json=search_payload
                 )
                 response.raise_for_status()
-                orders_data = response.json()
+                data = response.json()
                 
                 log.section("API Antwort")
-                log("Gefundene Bestellungen:")
-                log(json.dumps(orders_data, indent=2))
-                
-                if orders_data.get("Data") and len(orders_data["Data"]) > 0:
-                    return orders_data["Data"]
+                log("Suchergebnis:")
+                log(json.dumps(data, indent=2))
+
+                customers = data.get("Customers", [])
+                if len(customers) > 1:
+                    log(f"Mehrere Kundenkonten gefunden ({len(customers)}). Alle Bestellungen werden angezeigt.")
+                    # Zeige Popup mit Hinweis
+                    if self.parent_widget:
+                        msg = QMessageBox(self.parent_widget)
+                        msg.setIcon(QMessageBox.Information)
+                        msg.setWindowTitle("Mehrere Kundenkonten gefunden")
+                        msg.setText(f"Zu dieser E-Mail-Adresse wurden {len(customers)} Kundenkonten gefunden:")
+                        details = "\n".join([f"- {c['Name']}: {c['Addresses']}" for c in customers])
+                        msg.setInformativeText(f"Alle Bestellungen werden angezeigt.\n\nDetails:\n{details}")
+                        msg.setStandardButtons(QMessageBox.Ok)
+                        msg.exec_()
+                elif len(customers) == 1:
+                    log(f"Ein Kundenkonto gefunden: {customers[0]['Id']}")
                 else:
-                    log("Keine Bestellungen gefunden!")
-                    return None
-            except requests.exceptions.RequestException as e:
-                self.logger.error(f"Fehler beim Abrufen der Bestellungen: {str(e)}")
+                    log("Keine Kundenkonten gefunden!")
+                    return []
+
+                return [customer["Id"] for customer in customers]
+
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Fehler beim Abrufen der Kunden-IDs: {str(e)}")
+            return []
+
+    def get_all_customer_orders(self, email: str):
+        """
+        Ruft die Bestellungen aller Kundenkonten anhand der E-Mail-Adresse ab.
+        Sammelt die Bestellungen aller gefundenen Kundenkonten und gibt sie zusammen zurück.
+        """
+        with LogBlock(self.logger, "Kundenbestellungen") as log:
+            customer_ids = self.get_all_customer_ids(email)
+            if not customer_ids:
+                log("Keine Bestellungen, da keine Kundenkonten gefunden wurden!")
+                return None
+
+            all_orders = []
+            for customer_id in customer_ids:
+                log(f"Suche Bestellungen für Kunden-ID: {customer_id}")
+                orders_endpoint = f"{self.base_url}/customers/{customer_id}/orders"
+                
+                try:
+                    response = requests.get(
+                        orders_endpoint,
+                        headers=self.headers,
+                        auth=self.auth
+                    )
+                    response.raise_for_status()
+                    orders_data = response.json()
+                    
+                    if orders_data.get("Data") and len(orders_data["Data"]) > 0:
+                        all_orders.extend(orders_data["Data"])
+                        log(f"Bestellungen für Kunden-ID {customer_id} gefunden: {len(orders_data['Data'])}")
+                    else:
+                        log(f"Keine Bestellungen für Kunden-ID {customer_id} gefunden!")
+                except requests.exceptions.RequestException as e:
+                    self.logger.error(f"Fehler beim Abrufen der Bestellungen für Kunden-ID {customer_id}: {str(e)}")
+                    continue
+
+            if all_orders:
+                log(f"Insgesamt {len(all_orders)} Bestellungen für alle Kundenkonten gefunden")
+                return all_orders
+            else:
+                log("Keine Bestellungen für alle Kundenkonten gefunden!")
                 return None
 
     def extract_serial_number(self, notes: str) -> Optional[str]:
