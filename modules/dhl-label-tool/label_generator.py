@@ -59,14 +59,15 @@ def global_exception_handler(exctype, value, tb):
 sys.excepthook = global_exception_handler
 
 class DHLLabelGenerator(QMainWindow):
-    def __init__(self):
+    def __init__(self, parent=None):
         try:
-            super().__init__()
+            super().__init__(parent)
             self.logger = setup_logger()
             self.logger.info("Starte Initialisierung der Anwendung")
             
             # Setze den Fenstertitel
-            self.setWindowTitle("DHL Label Tool 17")
+            self.setWindowTitle("DHL Label Tool 17.5")
+            self.setMinimumSize(800, 600)
             
             # API Credentials
             self.username = None
@@ -182,14 +183,8 @@ class DHLLabelGenerator(QMainWindow):
             self.clear_fields_button.setFixedSize(100, 30)
             self.clear_fields_button.clicked.connect(lambda: utils.clear_all_fields(self))
             
-            # Neuer Button für Seriennummer-Extraktion
-            self.extract_serial_button = QPushButton("Seriennummer extrahieren")
-            self.extract_serial_button.clicked.connect(self.extract_and_update_serial)
-            self.extract_serial_button.setEnabled(False)
-            
             button_layout.addWidget(self.clear_fields_checkbox)
             button_layout.addStretch()
-            button_layout.addWidget(self.extract_serial_button)
             button_layout.addWidget(self.generate_button)
             button_layout.addWidget(self.clear_fields_button)
 
@@ -309,13 +304,11 @@ class DHLLabelGenerator(QMainWindow):
         if self.type_dropdown.currentText() == "- Bitte auswählen -":
             self.generate_button.setEnabled(False)
             self.email_button.setEnabled(False)
-            self.extract_serial_button.setEnabled(False)
             self.logger.info("Buttons deaktiviert, bitte einen Typ auswählen")
             self.logger.info("-" * 80)
         else:
             self.generate_button.setEnabled(True)
             self.email_button.setEnabled(True)
-            self.extract_serial_button.setEnabled(True)
             self.logger.info("Typ ausgewählt, Buttons aktiviert")
             self.logger.info("-" * 80)
     
@@ -941,53 +934,6 @@ class DHLLabelGenerator(QMainWindow):
         except Exception as e:
             self.logger.error(f"Fehler beim Laden der API-Credentials: {str(e)}")
             QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der API-Credentials: {str(e)}")
-
-    def extract_and_update_serial(self):
-        """Extrahiert die Seriennummer aus den Notizen und zeigt sie im Problembeschreibungsfeld an."""
-        try:
-            # Prüfe, ob eine Bestellung ausgewählt wurde
-            order_index = self.orders_dropdown.currentIndex()
-            if order_index <= 0:  # 0 ist der Platzhalter
-                QMessageBox.warning(self, "Fehler", "Bitte eine Bestellung auswählen")
-                return
-
-            selected_order = self.orders_dropdown.itemData(order_index)
-            if not selected_order:
-                QMessageBox.warning(self, "Fehler", "Keine gültige Bestellung ausgewählt")
-                return
-
-            # Initialisiere die Billbee-API
-            if not hasattr(self, 'bb_api') or self.bb_api is None:
-                self.bb_api = BillbeeAPI(
-                    api_key=self.bb_api_key,
-                    api_user=self.bb_api_user,
-                    api_password=self.bb_api_password
-                )
-
-            # Hole die Notizen der ausgewählten Bestellung
-            notes = self.bb_api.get_order_notes(selected_order["Id"])
-            if not notes:
-                QMessageBox.warning(self, "Fehler", "Keine Notizen für die ausgewählte Bestellung gefunden")
-                return
-
-            # Zeige die Notizen an
-            self.log_text.append(f"\nNotizen für Bestellung {selected_order.get('OrderNumber', 'Unbekannt')}:")
-            self.log_text.append("-" * 50)
-            self.log_text.append(notes)
-            self.log_text.append("-" * 50)
-
-            # Extrahiere die Seriennummer
-            serial_number = self.bb_api.extract_serial_number(notes)
-            if serial_number:
-                # Setze die Seriennummer in das Problembeschreibungsfeld
-                self.problem_description.setText(f"Seriennummer: {serial_number}")
-                self.logger.info(f"\nSeriennummer gefunden: {serial_number}")
-            else:
-                self.logger.info("\nKeine Seriennummer in den Notizen gefunden")
-
-        except Exception as e:
-            self.logger.error(f"Fehler beim Abrufen der Notizen: {str(e)}")
-            QMessageBox.critical(self, "Fehler", str(e))
 
 if __name__ == '__main__':
     try:
