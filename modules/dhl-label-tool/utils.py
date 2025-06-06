@@ -38,7 +38,7 @@ class LogBlock:
         self.level = level
         self.title = title
         self._start_time = None
-        
+
     def __enter__(self):
         self._start_time = datetime.now()
         if self.title:
@@ -46,7 +46,7 @@ class LogBlock:
             self.logger.log(self.level, f"=== {self.title} ===")
             self.logger.log(self.level, f"Start: {self._start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         return self
-        
+
     def __exit__(self, exc_type, exc_value, tb):
         end_time = datetime.now()
         duration = end_time - self._start_time if self._start_time else None

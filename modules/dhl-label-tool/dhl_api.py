@@ -231,7 +231,7 @@ class DHLAPI:
                             raise ValueError("Die Postleitzahl ist ungültig")
                         elif "city" in error_detail.lower():
                             raise ValueError("Die Stadt konnte nicht gefunden werden")
-                        else:
+                    else:
                             raise ValueError("Die Adressdaten konnten nicht validiert werden")
                     
                     self.logger.error(f"API Fehler: {response.status_code} - {response.text}")
