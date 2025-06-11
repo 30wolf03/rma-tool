@@ -7,10 +7,10 @@ interface for managing RMA database entries.
 from __future__ import annotations
 
 import sys
-from typing import Optional
+from typing import Optional, List
 
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon, QFont
+from PyQt6.QtGui import QIcon, QFont, QAction
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -26,6 +26,8 @@ from PyQt6.QtWidgets import (
     QStatusBar,
     QHeaderView,
     QStyle,
+    QToolBar,
+    QMenu,
 )
 
 from loguru import logger
@@ -39,6 +41,7 @@ from ..config.settings import (
 )
 from ..database.connection import DatabaseConnection, DatabaseConnectionError
 from ..utils.keepass_handler import KeepassHandler, KeepassError
+from .dialogs import DeleteConfirmationDialog
 
 # Configure logging
 logger.remove()  # Remove default handler
@@ -60,6 +63,7 @@ class MainWindow(QMainWindow):
         """Initialize the main window."""
         super().__init__()
         self._setup_ui()
+        self._setup_toolbar()
         self._setup_status_bar()
         self._setup_connections()
 
@@ -117,6 +121,126 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
         main_layout.addWidget(self.table)
+
+    def _setup_toolbar(self) -> None:
+        """Set up the toolbar with action buttons."""
+        toolbar = QToolBar("Hauptwerkzeugleiste")
+        toolbar.setMovable(False)
+        self.addToolBar(toolbar)
+
+        # Delete action
+        delete_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon),
+            "Löschen",
+            self
+        )
+        delete_action.setStatusTip("Ausgewählte RMA-Einträge löschen")
+        delete_action.triggered.connect(self._delete_selected_entries)
+        toolbar.addAction(delete_action)
+
+        # Refresh action
+        refresh_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload),
+            "Aktualisieren",
+            self
+        )
+        refresh_action.setStatusTip("RMA-Daten aktualisieren")
+        refresh_action.triggered.connect(self.load_rma_data)
+        toolbar.addAction(refresh_action)
+
+        # Context menu for table
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+
+    def _show_context_menu(self, position) -> None:
+        """Zeigt das Kontextmenü für die Tabelle an."""
+        menu = QMenu()
+        
+        delete_action = menu.addAction("Löschen")
+        delete_action.triggered.connect(self._delete_selected_entries)
+        
+        menu.exec(self.table.viewport().mapToGlobal(position))
+
+    def _get_selected_rma_numbers(self) -> List[str]:
+        """Gibt die RMA-Nummern der ausgewählten Einträge zurück."""
+        selected_rows = set(item.row() for item in self.table.selectedItems())
+        rma_numbers = []
+        
+        for row in selected_rows:
+            rma_item = self.table.item(row, self.table.horizontalHeader().logicalIndex(0))
+            if rma_item:
+                rma_numbers.append(rma_item.text())
+        
+        return rma_numbers
+
+    def _delete_selected_entries(self) -> None:
+        """Löscht die ausgewählten RMA-Einträge."""
+        if not self.db_connection:
+            self._show_error("Fehler", "Keine Datenbankverbindung")
+            return
+
+        rma_numbers = self._get_selected_rma_numbers()
+        if not rma_numbers:
+            self._show_error("Fehler", "Bitte wählen Sie mindestens einen Eintrag aus")
+            return
+
+        # Bestätigungsdialog anzeigen
+        dialog = DeleteConfirmationDialog(self, rma_numbers)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        try:
+            with self.db_connection.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Beginne Transaktion
+                cursor.execute("START TRANSACTION")
+                
+                try:
+                    # Lösche zuerst abhängige Daten
+                    if dialog.delete_attachments:
+                        cursor.execute(
+                            "DELETE a FROM attachments a "
+                            "INNER JOIN rma_requests r ON a.rma_request_id = r.id "
+                            "WHERE r.rma_number IN %s",
+                            (rma_numbers,)
+                        )
+                    
+                    if dialog.delete_shipping:
+                        cursor.execute(
+                            "DELETE s FROM shipping s "
+                            "INNER JOIN rma_requests r ON s.rma_request_id = r.id "
+                            "WHERE r.rma_number IN %s",
+                            (rma_numbers,)
+                        )
+                    
+                    # Lösche RMA-Einträge
+                    cursor.execute(
+                        "DELETE FROM rma_requests WHERE rma_number IN %s",
+                        (rma_numbers,)
+                    )
+                    
+                    # Commit Transaktion
+                    cursor.execute("COMMIT")
+                    
+                    self._show_success(
+                        "Erfolg",
+                        f"{len(rma_numbers)} RMA-Einträge wurden gelöscht"
+                    )
+                    
+                    # Tabelle aktualisieren
+                    self.load_rma_data()
+                    
+                except Exception as e:
+                    # Bei Fehler Rollback
+                    cursor.execute("ROLLBACK")
+                    raise e
+                    
+        except DatabaseConnectionError as e:
+            self._show_error("Datenbankfehler", str(e))
+        except Exception as e:
+            logger.exception("Fehler beim Löschen der Einträge")
+            self._show_error("Fehler", f"Unerwarteter Fehler: {e}")
 
     def _setup_status_bar(self) -> None:
         """Set up the status bar."""

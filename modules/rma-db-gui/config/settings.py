@@ -14,7 +14,7 @@ CREDENTIALS_FILE: Path = MODULE_DIR / "credentials.kdbx"
 
 # Logging settings
 LOG_DIR: Path = MODULE_DIR / "logs"
-LOG_LEVEL: str = "INFO"
+LOG_LEVEL: str = "DEBUG"
 LOG_FORMAT: str = "{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
 
 def get_log_file() -> Path:
