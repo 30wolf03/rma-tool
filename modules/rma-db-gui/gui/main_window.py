@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
     QStyle,
     QToolBar,
     QMenu,
+    QDialog,
 )
 
 from loguru import logger
@@ -147,6 +148,16 @@ class MainWindow(QMainWindow):
         refresh_action.setStatusTip("RMA-Daten aktualisieren")
         refresh_action.triggered.connect(self.load_rma_data)
         toolbar.addAction(refresh_action)
+
+        # Testeintrag anlegen
+        add_test_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder),
+            "Testeintrag anlegen",
+            self
+        )
+        add_test_action.setStatusTip("Fügt einen Dummy-RMA-Eintrag zum Testen hinzu")
+        add_test_action.triggered.connect(self._add_test_entry)
+        toolbar.addAction(add_test_action)
 
         # Context menu for table
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -340,6 +351,38 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.exception("Unexpected error while loading RMA data")
             self._show_error("Error", f"An unexpected error occurred: {e}")
+
+    def _add_test_entry(self):
+        """Fügt einen Dummy-RMA-Eintrag mit Produkt und RepairDetails hinzu."""
+        if not self.db_connection:
+            self._show_error("Fehler", "Keine Datenbankverbindung")
+            return
+        try:
+            with self.db_connection.get_connection() as conn:
+                cursor = conn.cursor()
+                import random
+                ticket_number = f"TEST-{random.randint(10000,99999)}"
+                order_number = "SY12345"
+                # RMA_Cases
+                cursor.execute(
+                    "INSERT INTO RMA_Cases (TicketNumber, OrderNumber, EntryDate, Status) VALUES (%s, %s, CURDATE(), 'Open')",
+                    (ticket_number, order_number)
+                )
+                # RMA_Products
+                cursor.execute(
+                    "INSERT INTO RMA_Products (TicketNumber, OrderNumber, ProductName, SerialNumber, Quantity) VALUES (%s, %s, %s, %s, %s)",
+                    (ticket_number, order_number, "TestProduct", "SN-TEST", 1)
+                )
+                # RMA_RepairDetails
+                cursor.execute(
+                    "INSERT INTO RMA_RepairDetails (TicketNumber, OrderNumber, CustomerDescription) VALUES (%s, %s, %s)",
+                    (ticket_number, order_number, "Test repair entry")
+                )
+                conn.commit()
+            self._show_success("Erfolg", f"Testeintrag {ticket_number} wurde angelegt.")
+            self.load_rma_data()
+        except Exception as e:
+            self._show_error("Fehler", f"Testeintrag konnte nicht angelegt werden: {e}")
 
 
 def main() -> None:
