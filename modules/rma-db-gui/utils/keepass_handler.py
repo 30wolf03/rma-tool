@@ -129,17 +129,27 @@ class KeepassHandler:
             ssh_entry = self._get_entry(SSH_ENTRY)
             entry = ssh_entry["entry"]
             
+            # Debug-Logging für die Anhänge
+            logger.debug("Verfügbare Anhänge im SSH-Eintrag:")
+            for attachment in entry.attachments:
+                logger.debug(f"- {attachment.filename}")
+            
             # Suche nach der angehängten OpenSSH-Key-Datei im SSH-Eintrag
             private_key = None
             for attachment in entry.attachments:
                 if attachment.filename == "traccar.key":
                     private_key = attachment.data.decode('utf-8')
+                    logger.debug("OpenSSH-Key gefunden und erfolgreich gelesen")
                     break
 
             if not private_key:
+                logger.error("Kein OpenSSH-Key (traccar.key) in den Anhängen gefunden")
                 raise KeepassEntryError(
                     "Private key 'traccar.key' not found in SSH entry"
                 )
+
+            # Debug-Logging für die URL
+            logger.debug(f"SSH URL: {ssh_entry['url']}")
 
             return {
                 "username": ssh_entry["username"],

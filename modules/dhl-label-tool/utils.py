@@ -276,3 +276,23 @@ def add_gui_handler(text_widget: QTextEdit):
     gui_handler.setLevel(logging.INFO)
     logger.addHandler(gui_handler)
     return logger
+
+
+def mask_password(password: str, visible_chars: int = 5) -> str:
+    """
+    Kürzt ein Passwort für das Logging, sodass nur die ersten n Zeichen sichtbar sind.
+    
+    Args:
+        password: Das zu maskierende Passwort
+        visible_chars: Anzahl der sichtbaren Zeichen am Anfang (Standard: 5)
+        
+    Returns:
+        Das maskierte Passwort im Format "XXXXX..." oder "XXXXX" wenn das Passwort kürzer ist
+    """
+    if not password:
+        return ""
+    
+    if len(password) <= visible_chars:
+        return "X" * len(password)
+        
+    return password[:visible_chars] + "..."

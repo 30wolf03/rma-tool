@@ -2,7 +2,72 @@ from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError, HeaderChecksumError
 import os
 import sys
-from utils import setup_logger, LogBlock
+import logging
+from datetime import datetime
+
+def mask_password(password: str, visible_chars: int = 5) -> str:
+    """
+    Kürzt ein Passwort für das Logging, sodass nur die ersten n Zeichen sichtbar sind.
+    
+    Args:
+        password: Das zu maskierende Passwort
+        visible_chars: Anzahl der sichtbaren Zeichen am Anfang (Standard: 5)
+        
+    Returns:
+        Das maskierte Passwort im Format "XXXXX..." oder "XXXXX" wenn das Passwort kürzer ist
+    """
+    if not password:
+        return ""
+    
+    if len(password) <= visible_chars:
+        return "X" * len(password)
+        
+    return password[:visible_chars] + "..."
+
+def setup_logger():
+    """Richtet den Logger ein."""
+    logger = logging.getLogger("DHLLabelGenerator")
+    if not logger.hasHandlers():
+        # Erstelle einen Ordner für Logs, falls noch nicht vorhanden
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Dateiname mit Zeitstempel
+        log_filename = f"dhllabeltool_{datetime.now().strftime('%Y%m%d_%H-%M-%S')}.log"
+        log_filepath = os.path.join(log_dir, log_filename)
+
+        # Handler für Datei und Konsole
+        file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
+        console_handler = logging.StreamHandler(sys.stdout)
+
+        # Formatter für beide Handler
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+
+        # Handler zum Logger hinzufügen
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+        logger.setLevel(logging.DEBUG)
+    return logger
+
+class LogBlock:
+    """
+    Kontextmanager zur Aggregation mehrerer Logmeldungen in einem
+    gemeinsamen Block.
+    """
+    def __init__(self, logger, level=logging.INFO):
+        self.logger = logger
+        self.level = level
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.logger.log(self.level, "-" * 80)
+
+    def __call__(self, message):
+        self.logger.log(self.level, message)
 
 class KeePassHandler:
     def __init__(self, database_path):
@@ -21,13 +86,13 @@ class KeePassHandler:
             self.logger.info(f"Versuche Datenbank zu öffnen: {self.database_path}")
             self.logger.debug(f"Datei existiert: {os.path.exists(self.database_path)}")
             self.logger.debug(f"Dateigröße: {os.path.getsize(self.database_path)} bytes")
+            self.logger.debug(f"Verwende Master-Passwort: {mask_password(password)}")
 
             self.kp = PyKeePass(self.database_path, password=password)
             self.logger.info("Datenbank erfolgreich geöffnet.")
             self.logger.info(f"-" * 80)
             return True
             
-
         except Exception as e:
             self.logger.error(f"-" * 80)
             self.logger.error(f"Fehlertyp: {type(e).__name__}")
@@ -52,6 +117,8 @@ class KeePassHandler:
                 return None, None
 
             self.logger.info(f"Eintrag '{entry_title}' gefunden.")
+            if entry.password:
+                self.logger.debug(f"Passwort für '{entry_title}': {mask_password(entry.password)}")
             return entry.username, entry.password
         except Exception as e:
             self.logger.error(f"Fehler beim Abrufen der Zugangsdaten: {str(e)}")

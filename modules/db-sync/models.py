@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Enum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
+import enum
 
 Base = declarative_base()
 
@@ -35,6 +36,14 @@ class RepairCenter(Base):
     
     rma_requests = relationship("RMARequest", back_populates="repair_center")
 
+class ShippingStatus(enum.Enum):
+    """Mögliche Status für Sendungen."""
+    LABEL_CREATED = "Label ausgestellt"
+    IN_TRANSIT = "Versendet"
+    DELIVERED = "Zugestellt"
+    DELIVERED_TO_NEIGHBOR = "Bei Nachbarn"
+    UNKNOWN = "Unbekannt"
+
 class RMARequest(Base):
     __tablename__ = 'rma_requests'
     
@@ -55,6 +64,17 @@ class RMARequest(Base):
     repair_notes = relationship("RepairNote", back_populates="rma_request")
     shipping = relationship("Shipping", back_populates="rma_request")
     attachments = relationship("Attachment", back_populates="rma_request")
+
+    def update_status(self, new_status: str) -> None:
+        """Aktualisiert den Status der RMA-Anfrage.
+        
+        Args:
+            new_status: Der neue Status (muss einem ShippingStatus entsprechen)
+        """
+        valid_statuses = [status.value for status in ShippingStatus]
+        if new_status not in valid_statuses:
+            raise ValueError(f"Ungültiger Status. Erlaubte Werte: {valid_statuses}")
+        self.status = new_status
 
 class RepairStatus(Base):
     __tablename__ = 'repair_status'
@@ -87,6 +107,9 @@ class Shipping(Base):
     carrier = Column(String(50))
     date_shipped = Column(DateTime)
     date_received = Column(DateTime)
+    status = Column(Enum(ShippingStatus), default=ShippingStatus.UNKNOWN)
+    last_tracking_update = Column(DateTime)
+    tracking_details = Column(Text)  # Für zusätzliche Tracking-Informationen
     
     rma_request = relationship("RMARequest", back_populates="shipping")
 
