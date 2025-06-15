@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 from typing import Optional, List
+from datetime import datetime
 
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon, QFont, QAction
@@ -29,6 +30,10 @@ from PyQt6.QtWidgets import (
     QToolBar,
     QMenu,
     QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QTextEdit,
+    QCheckBox,
 )
 
 from loguru import logger
@@ -53,6 +58,131 @@ logger.add(sys.stderr, level=LOG_LEVEL, format=LOG_FORMAT)
 # Log in die Datei
 logger.add(str(get_log_file()), level=LOG_LEVEL, format=LOG_FORMAT, encoding="utf-8")
 
+class LoginDialog(QDialog):
+    """Dialog zur Eingabe von Initialen und Passwort."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Login")
+        self.setModal(True)
+        self.initials = None
+        self.password = None
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QFormLayout(self)
+        self.initials_edit = QLineEdit()
+        self.initials_edit.setPlaceholderText("Initialen")
+        layout.addRow("Initialen:", self.initials_edit)
+
+        pw_layout = QHBoxLayout()
+        self.pw_edit = QLineEdit()
+        self.pw_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.pw_edit.setPlaceholderText("Passwort")
+        pw_layout.addWidget(self.pw_edit)
+        self.toggle_btn = QPushButton("👁")
+        self.toggle_btn.setCheckable(True)
+        self.toggle_btn.setToolTip("Passwort anzeigen/ausblenden")
+        self.toggle_btn.toggled.connect(self._toggle_pw_visibility)
+        pw_layout.addWidget(self.toggle_btn)
+        layout.addRow("Passwort:", pw_layout)
+
+        btn_layout = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Abbrechen")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addRow(btn_layout)
+
+    def _toggle_pw_visibility(self, checked):
+        self.pw_edit.setEchoMode(QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password)
+
+    def accept(self):
+        self.initials = self.initials_edit.text().strip()
+        self.password = self.pw_edit.text()
+        if not self.initials:
+            QMessageBox.warning(self, "Fehler", "Bitte Initialen eingeben.")
+            return
+        if not self.password:
+            QMessageBox.warning(self, "Fehler", "Bitte Passwort eingeben.")
+            return
+        super().accept()
+
+class TicketDetailsDialog(QDialog):
+    """Dialog zur Anzeige der Ticket-Details."""
+    
+    def __init__(self, parent: QMainWindow, ticket_number: str, db_connection: DatabaseConnection) -> None:
+        """Initialisiert den Detail-Dialog.
+        
+        Args:
+            parent: Parent-Window
+            ticket_number: Die Ticket-Nummer
+            db_connection: Die Datenbankverbindung
+        """
+        super().__init__(parent)
+        self.ticket_number = ticket_number
+        self.db_connection = db_connection
+        self.setWindowTitle(f"Ticket Details - {ticket_number}")
+        self.setMinimumWidth(600)
+        self._setup_ui()
+        self._load_details()
+        
+    def _setup_ui(self) -> None:
+        """Richtet die Benutzeroberfläche ein."""
+        layout = QVBoxLayout(self)
+        
+        # Formular für die Details
+        form_layout = QFormLayout()
+        
+        # Allgemeine Informationen
+        self.customer_desc = QTextEdit()
+        self.customer_desc.setReadOnly(True)
+        form_layout.addRow("Kundenbeschreibung:", self.customer_desc)
+        
+        self.problem_cause = QTextEdit()
+        self.problem_cause.setReadOnly(True)
+        form_layout.addRow("Problemursache:", self.problem_cause)
+        
+        self.last_action = QLabel()
+        form_layout.addRow("Letzte Aktion:", self.last_action)
+        
+        self.last_handler = QLabel()
+        form_layout.addRow("Letzter Bearbeiter:", self.last_handler)
+        
+        layout.addLayout(form_layout)
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+    def _load_details(self) -> None:
+        """Lädt die Ticket-Details aus der Datenbank."""
+        try:
+            # Lade RepairDetails
+            results = self.db_connection.execute_query("""
+                SELECT 
+                    rd.CustomerDescription,
+                    rd.ProblemCause,
+                    rd.LastAction,
+                    rd.LastHandler,
+                    h.Name as HandlerName
+                FROM RMA_RepairDetails rd
+                LEFT JOIN Handlers h ON rd.LastHandler = h.Initials
+                WHERE rd.TicketNumber = %s
+            """, (self.ticket_number,))
+            
+            if results:
+                row = results[0]
+                self.customer_desc.setText(row['CustomerDescription'] or '')
+                self.problem_cause.setText(row['ProblemCause'] or '')
+                self.last_action.setText(row['LastAction'] or '')
+                self.last_handler.setText(f"{row['HandlerName']} ({row['LastHandler']})" if row['HandlerName'] else row['LastHandler'] or '')
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Details: {e}")
+
 class MainWindow(QMainWindow):
     """Main window for the RMA Database GUI.
 
@@ -63,6 +193,11 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         """Initialize the main window."""
         super().__init__()
+        # Login-Dialog anzeigen
+        login = LoginDialog(self)
+        if login.exec() != QDialog.DialogCode.Accepted:
+            sys.exit(0)
+        self.current_user = login.initials
         self._setup_ui()
         self._setup_toolbar()
         self._setup_status_bar()
@@ -118,9 +253,21 @@ class MainWindow(QMainWindow):
         self.table.setFont(QFont("Segoe UI", 10))
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        # Erlaube Textauswahl durch Anpassung der Item-Flags
+        self.table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers | 
+            QTableWidget.EditTrigger.DoubleClicked
+        )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
+        
+        # Aktiviere Sortierung
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().sectionClicked.connect(self._handle_sort)
+        
+        # Verbinde Doppelklick-Signal
+        self.table.cellDoubleClicked.connect(self._show_ticket_details)
+        
         main_layout.addWidget(self.table)
 
     def _setup_toolbar(self) -> None:
@@ -185,7 +332,7 @@ class MainWindow(QMainWindow):
         return rma_numbers
 
     def _delete_selected_entries(self) -> None:
-        """Löscht die ausgewählten RMA-Einträge."""
+        """Führt ein Soft Delete für die ausgewählten RMA-Einträge durch."""
         if not self.db_connection:
             self._show_error("Fehler", "Keine Datenbankverbindung")
             return
@@ -208,27 +355,39 @@ class MainWindow(QMainWindow):
                 cursor.execute("START TRANSACTION")
                 
                 try:
-                    # Lösche zuerst abhängige Daten
-                    if dialog.delete_attachments:
-                        cursor.execute(
-                            "DELETE a FROM attachments a "
-                            "INNER JOIN rma_requests r ON a.rma_request_id = r.id "
-                            "WHERE r.rma_number IN %s",
-                            (rma_numbers,)
-                        )
-                    
-                    if dialog.delete_shipping:
-                        cursor.execute(
-                            "DELETE s FROM shipping s "
-                            "INNER JOIN rma_requests r ON s.rma_request_id = r.id "
-                            "WHERE r.rma_number IN %s",
-                            (rma_numbers,)
-                        )
-                    
-                    # Lösche RMA-Einträge
+                    # Soft Delete für RMA_Cases
                     cursor.execute(
-                        "DELETE FROM rma_requests WHERE rma_number IN %s",
-                        (rma_numbers,)
+                        """
+                        UPDATE RMA_Cases 
+                        SET IsDeleted = TRUE, 
+                            DeletedAt = CURRENT_TIMESTAMP,
+                            DeletedBy = %s
+                        WHERE TicketNumber IN %s
+                        """,
+                        (self.current_user, rma_numbers)
+                    )
+                    
+                    # Soft Delete für zugehörige Daten
+                    cursor.execute(
+                        """
+                        UPDATE RMA_RepairDetails 
+                        SET IsDeleted = TRUE,
+                            DeletedAt = CURRENT_TIMESTAMP,
+                            DeletedBy = %s
+                        WHERE TicketNumber IN %s
+                        """,
+                        (self.current_user, rma_numbers)
+                    )
+                    
+                    cursor.execute(
+                        """
+                        UPDATE RMA_Products 
+                        SET IsDeleted = TRUE,
+                            DeletedAt = CURRENT_TIMESTAMP,
+                            DeletedBy = %s
+                        WHERE TicketNumber IN %s
+                        """,
+                        (self.current_user, rma_numbers)
                     )
                     
                     # Commit Transaktion
@@ -236,7 +395,7 @@ class MainWindow(QMainWindow):
                     
                     self._show_success(
                         "Erfolg",
-                        f"{len(rma_numbers)} RMA-Einträge wurden gelöscht"
+                        f"{len(rma_numbers)} RMA-Einträge wurden archiviert"
                     )
                     
                     # Tabelle aktualisieren
@@ -250,7 +409,7 @@ class MainWindow(QMainWindow):
         except DatabaseConnectionError as e:
             self._show_error("Datenbankfehler", str(e))
         except Exception as e:
-            logger.exception("Fehler beim Löschen der Einträge")
+            logger.exception("Fehler beim Archivieren der Einträge")
             self._show_error("Fehler", f"Unerwarteter Fehler: {e}")
 
     def _setup_status_bar(self) -> None:
@@ -316,14 +475,50 @@ class MainWindow(QMainWindow):
             logger.exception("Unexpected error during database connection")
             self._show_error("Error", f"An unexpected error occurred: {e}")
 
+    def _show_ticket_details(self, row: int, column: int) -> None:
+        """Zeigt den Detail-Dialog für das ausgewählte Ticket an."""
+        if not self.db_connection:
+            return
+            
+        ticket_item = self.table.item(row, 0)  # TicketNumber ist die erste Spalte
+        if ticket_item:
+            ticket_number = ticket_item.text()
+            dialog = TicketDetailsDialog(self, ticket_number, self.db_connection)
+            dialog.exec()
+
     def load_rma_data(self) -> None:
         """Load RMA data from the database and display it in the table."""
         if not self.db_connection:
             return
 
         try:
-            # Execute query to get RMA data
-            results = self.db_connection.execute_query("SELECT * FROM RMA_Cases")
+            # Deaktiviere Sortierung während des Ladens
+            self.table.setSortingEnabled(False)
+            
+            # Execute query to get RMA data with storage location names and handler
+            results = self.db_connection.execute_query("""
+                SELECT 
+                    c.TicketNumber,
+                    c.OrderNumber,
+                    c.Type,
+                    c.EntryDate,
+                    c.Status,
+                    c.ExitDate,
+                    c.TrackingNumber,
+                    c.IsAmazon,
+                    s.LocationName as StorageLocation,
+                    rd.LastHandler,
+                    h.Name as HandlerName,
+                    c.IsDeleted,
+                    c.DeletedAt,
+                    c.DeletedBy
+                FROM RMA_Cases c
+                LEFT JOIN StorageLocations s ON c.StorageLocationID = s.ID
+                LEFT JOIN RMA_RepairDetails rd ON c.TicketNumber = rd.TicketNumber
+                LEFT JOIN Handlers h ON rd.LastHandler = h.Initials
+                WHERE c.IsDeleted = FALSE
+                ORDER BY c.TicketNumber DESC
+            """)
 
             if not results:
                 self.table.setRowCount(0)
@@ -332,16 +527,65 @@ class MainWindow(QMainWindow):
 
             # Set up table
             self.table.setRowCount(len(results))
-            self.table.setColumnCount(len(results[0]))
-            self.table.setHorizontalHeaderLabels(results[0].keys())
+            # Zeige nur die relevanten Spalten an
+            visible_columns = [
+                'TicketNumber', 'OrderNumber', 'Type', 'EntryDate', 
+                'Status', 'ExitDate', 'TrackingNumber', 'IsAmazon',
+                'StorageLocation', 'LastHandler'
+            ]
+            self.table.setColumnCount(len(visible_columns))
+            
+            # Setze die Spaltenüberschriften
+            headers = []
+            for col in visible_columns:
+                if col == 'HandlerName':
+                    headers.append('LastHandler')
+                else:
+                    headers.append(col)
+            self.table.setHorizontalHeaderLabels(headers)
 
             # Fill table with data
             for row_idx, row_data in enumerate(results):
-                for col_idx, value in enumerate(row_data.values()):
-                    item = QTableWidgetItem(str(value))
-                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                col_idx = 0
+                for key in visible_columns:
+                    if key == 'HandlerName':
+                        # Kombiniere Name und Initials für LastHandler
+                        handler_name = row_data.get('HandlerName', '')
+                        initials = row_data.get('LastHandler', '')
+                        display_value = f"{handler_name} ({initials})" if handler_name else initials
+                        item = QTableWidgetItem(display_value)
+                    else:
+                        value = row_data.get(key)
+                        item = QTableWidgetItem(str(value) if value is not None else '')
+                    
+                    # Setze die Sortierreihenfolge für verschiedene Datentypen
+                    if key in ['EntryDate', 'ExitDate']:
+                        try:
+                            date = datetime.strptime(str(value), '%Y-%m-%d').date()
+                            item.setData(Qt.ItemDataRole.DisplayRole, str(value))
+                            item.setData(Qt.ItemDataRole.UserRole, date)
+                        except (ValueError, TypeError):
+                            item.setData(Qt.ItemDataRole.DisplayRole, '')
+                    elif key == 'TicketNumber':
+                        try:
+                            num = int(''.join(filter(str.isdigit, str(value))))
+                            item.setData(Qt.ItemDataRole.DisplayRole, str(value))
+                            item.setData(Qt.ItemDataRole.UserRole, num)
+                        except ValueError:
+                            item.setData(Qt.ItemDataRole.DisplayRole, str(value))
+                    
+                    # Erlaube Textauswahl, aber keine Bearbeitung
+                    item.setFlags(
+                        Qt.ItemFlag.ItemIsSelectable | 
+                        Qt.ItemFlag.ItemIsEnabled |
+                        Qt.ItemFlag.ItemIsEditable  # Erlaubt Textauswahl
+                    )
                     self.table.setItem(row_idx, col_idx, item)
+                    col_idx += 1
 
+            # Aktiviere Sortierung wieder
+            self.table.setSortingEnabled(True)
+            
             # Adjust column widths
             self.table.resizeColumnsToContents()
             self.status_bar.showMessage(f"Loaded {len(results)} RMA entries", 5000)
@@ -384,6 +628,98 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._show_error("Fehler", f"Testeintrag konnte nicht angelegt werden: {e}")
 
+    def _handle_sort(self, logical_index: int) -> None:
+        """Behandelt das Sortieren der Tabelle.
+        
+        Args:
+            logical_index: Index der geklickten Spalte
+        """
+        header = self.table.horizontalHeader()
+        
+        # Wenn die gleiche Spalte nochmal geklickt wird, wechsle die Sortierrichtung
+        if header.sortIndicatorSection() == logical_index:
+            # Wechsle die Sortierrichtung
+            new_order = (Qt.SortOrder.AscendingOrder 
+                        if header.sortIndicatorOrder() == Qt.SortOrder.DescendingOrder 
+                        else Qt.SortOrder.DescendingOrder)
+        else:
+            # Neue Spalte: Standardmäßig aufsteigend sortieren
+            new_order = Qt.SortOrder.AscendingOrder
+        
+        # Sortiere die Tabelle
+        self.table.sortItems(logical_index, new_order)
+        
+        # Aktualisiere den Sortierindikator
+        header.setSortIndicator(logical_index, new_order)
+
+class DeleteConfirmationDialog(QDialog):
+    """Dialog zur Bestätigung des Archivierens von RMA-Einträgen."""
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        rma_numbers: Optional[List[str]] = None
+    ) -> None:
+        """Initialisiert den Archivierungs-Bestätigungsdialog.
+        
+        Args:
+            parent: Parent-Widget
+            rma_numbers: Liste der zu archivierenden RMA-Nummern
+        """
+        super().__init__(parent)
+        self.rma_numbers = rma_numbers or []
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        """Richtet die Benutzeroberfläche ein."""
+        self.setWindowTitle("RMA-Einträge archivieren")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Warnung
+        warning_label = QLabel(
+            "Warnung: Diese Aktion verschiebt die Einträge in das Archiv!"
+        )
+        warning_label.setStyleSheet("color: orange; font-weight: bold;")
+        layout.addWidget(warning_label)
+        
+        # Liste der zu archivierenden Einträge
+        if self.rma_numbers:
+            entries_label = QLabel(
+                f"Folgende RMA-Einträge werden archiviert:\n" +
+                "\n".join(f"- {rma}" for rma in self.rma_numbers)
+            )
+            layout.addWidget(entries_label)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        cancel_button = QPushButton("Abbrechen")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_button)
+        
+        archive_button = QPushButton("Archivieren")
+        archive_button.setStyleSheet("background-color: #ffc107; color: black;")
+        archive_button.clicked.connect(self._confirm_delete)
+        button_layout.addWidget(archive_button)
+        
+        layout.addLayout(button_layout)
+
+    def _confirm_delete(self) -> None:
+        """Zeigt eine letzte Bestätigung an und akzeptiert den Dialog."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle("Letzte Bestätigung")
+        msg.setText("Sind Sie sicher, dass Sie diese Einträge archivieren möchten?")
+        msg.setInformativeText("Die Einträge können später wiederhergestellt werden.")
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+        
+        if msg.exec() == QMessageBox.StandardButton.Yes:
+            self.accept()
 
 def main() -> None:
     """Start the RMA Database GUI application."""
