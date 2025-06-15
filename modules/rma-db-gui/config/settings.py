@@ -36,7 +36,7 @@ DB_CONNECT_TIMEOUT: int = 10
 # KeePass entry names
 SSH_ENTRY: str = "SSH"
 MYSQL_ENTRY: str = "MySQL"
-PRIVATE_KEY_ENTRY: str = "traccar.ppk"
+PRIVATE_KEY_ENTRY: str = "traccar.key"
 
 # GUI settings
 WINDOW_TITLE: str = "RMA Database Manager"
