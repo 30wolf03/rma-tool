@@ -163,8 +163,9 @@ class DatabaseConnection:
 
         try:
             mysql_creds: Dict[str, str] = self.keepass_handler.get_mysql_credentials()
+            logger.debug(f"MySQL-Verbindungsversuch mit Benutzer: {mysql_creds['username']}")
 
-            return pymysql.connect(
+            connection = pymysql.connect(
                 host="127.0.0.1",
                 port=self._tunnel.local_bind_port,
                 user=mysql_creds["username"],
@@ -173,9 +174,13 @@ class DatabaseConnection:
                 cursorclass=DictCursor,
                 connect_timeout=10,
             )
+            logger.debug("MySQL-Verbindung erfolgreich hergestellt")
+            return connection
         except pymysql.MySQLError as e:
+            logger.error(f"MySQL-Verbindungsfehler: {e}")
             raise MySQLConnectionError(f"Failed to connect to MySQL: {e}") from e
         except KeyError as e:
+            logger.error(f"Fehlende MySQL-Anmeldedaten: {e}")
             raise MySQLConnectionError(f"Missing required MySQL credentials: {e}") from e
 
     @contextmanager
