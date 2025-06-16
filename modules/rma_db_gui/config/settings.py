@@ -8,14 +8,22 @@ from pathlib import Path
 from typing import Tuple
 from datetime import datetime
 
+from loguru import logger
+import sys
+
 # Base paths
 MODULE_DIR: Path = Path(__file__).parent.parent
 CREDENTIALS_FILE: Path = MODULE_DIR / "credentials.kdbx"
 
 # Logging settings
 LOG_DIR: Path = MODULE_DIR / "logs"
-LOG_LEVEL: str = "DEBUG"
-LOG_FORMAT: str = "{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
+LOG_LEVEL: str = "INFO"
+LOG_FORMAT: str = (
+    "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+    "<level>{level: <8}</level> | "
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+    "<level>{message}</level>"
+)
 
 def get_log_file() -> Path:
     """Get the log file path with current timestamp.
@@ -26,6 +34,36 @@ def get_log_file() -> Path:
     LOG_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     return LOG_DIR / f"rma_gui_{timestamp}.log"
+
+def setup_logging(level: str = LOG_LEVEL) -> None:
+    """Richtet das Logging für die Anwendung ein.
+    
+    Args:
+        level: Log-Level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    """
+    # Entferne Standard-Handler
+    logger.remove()
+    
+    # Log in die Konsole
+    logger.add(
+        sys.stderr,
+        level=level,
+        format=LOG_FORMAT,
+        colorize=True
+    )
+    
+    # Log in die Datei
+    logger.add(
+        str(get_log_file()),
+        level=level,
+        format=LOG_FORMAT,
+        encoding="utf-8",
+        rotation="1 day",  # Neue Datei pro Tag
+        retention="30 days",  # Behalte Logs für 30 Tage
+        compression="zip"  # Komprimiere alte Logs
+    )
+    
+    logger.info(f"Logging initialisiert mit Level: {level}")
 
 # Database settings
 DB_NAME: str = "rma"
