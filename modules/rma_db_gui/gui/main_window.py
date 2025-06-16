@@ -48,6 +48,7 @@ from ..config.settings import (
 from ..database.connection import DatabaseConnection, DatabaseConnectionError
 from ..utils.keepass_handler import KeepassHandler, KeepassError
 from .dialogs import DeleteConfirmationDialog
+from .login_window import LoginDialog
 
 # Configure logging
 logger.remove()  # Remove default handler
@@ -57,57 +58,6 @@ logger.add(sys.stderr, level=LOG_LEVEL, format=LOG_FORMAT)
 
 # Log in die Datei
 logger.add(str(get_log_file()), level=LOG_LEVEL, format=LOG_FORMAT, encoding="utf-8")
-
-class LoginDialog(QDialog):
-    """Dialog zur Eingabe von Initialen und Passwort."""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Login")
-        self.setModal(True)
-        self.initials = None
-        self.password = None
-        self._setup_ui()
-
-    def _setup_ui(self):
-        layout = QFormLayout(self)
-        self.initials_edit = QLineEdit()
-        self.initials_edit.setPlaceholderText("Initialen")
-        layout.addRow("Initialen:", self.initials_edit)
-
-        pw_layout = QHBoxLayout()
-        self.pw_edit = QLineEdit()
-        self.pw_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.pw_edit.setPlaceholderText("Passwort")
-        pw_layout.addWidget(self.pw_edit)
-        self.toggle_btn = QPushButton("👁")
-        self.toggle_btn.setCheckable(True)
-        self.toggle_btn.setToolTip("Passwort anzeigen/ausblenden")
-        self.toggle_btn.toggled.connect(self._toggle_pw_visibility)
-        pw_layout.addWidget(self.toggle_btn)
-        layout.addRow("Passwort:", pw_layout)
-
-        btn_layout = QHBoxLayout()
-        ok_btn = QPushButton("OK")
-        ok_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Abbrechen")
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(ok_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addRow(btn_layout)
-
-    def _toggle_pw_visibility(self, checked):
-        self.pw_edit.setEchoMode(QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password)
-
-    def accept(self):
-        self.initials = self.initials_edit.text().strip()
-        self.password = self.pw_edit.text()
-        if not self.initials:
-            QMessageBox.warning(self, "Fehler", "Bitte Initialen eingeben.")
-            return
-        if not self.password:
-            QMessageBox.warning(self, "Fehler", "Bitte Passwort eingeben.")
-            return
-        super().accept()
 
 class TicketDetailsDialog(QDialog):
     """Dialog zur Anzeige der Ticket-Details."""
@@ -193,11 +143,18 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         """Initialize the main window."""
         super().__init__()
+        
         # Login-Dialog anzeigen
         login = LoginDialog(self)
         if login.exec() != QDialog.DialogCode.Accepted:
             sys.exit(0)
-        self.current_user = login.initials
+            
+        try:
+            self.current_user, password = login.get_credentials()
+        except ValueError as e:
+            logger.error(f"Login fehlgeschlagen: {e}")
+            sys.exit(1)
+            
         self._setup_ui()
         self._setup_toolbar()
         self._setup_status_bar()
@@ -205,6 +162,16 @@ class MainWindow(QMainWindow):
 
         # Initialize database connection
         self.db_connection: Optional[DatabaseConnection] = None
+        
+        # Versuche direkt die Verbindung herzustellen
+        try:
+            keepass_handler = KeepassHandler(password)
+            self.db_connection = DatabaseConnection(keepass_handler)
+            self._show_success("Erfolg", "Erfolgreich mit der Datenbank verbunden!")
+            self.load_rma_data()
+        except (KeepassError, DatabaseConnectionError) as e:
+            self._show_error("Verbindungsfehler", str(e))
+            sys.exit(1)
 
     def _setup_ui(self) -> None:
         """Set up the user interface components."""
@@ -492,8 +459,10 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            # Deaktiviere Sortierung während des Ladens
-            self.table.setSortingEnabled(False)
+            # Speichere aktuelle Sortierreihenfolge
+            header = self.table.horizontalHeader()
+            current_sort_column = header.sortIndicatorSection()
+            current_sort_order = header.sortIndicatorOrder()
             
             # Execute query to get RMA data with storage location names and handler
             results = self.db_connection.execute_query("""
@@ -583,8 +552,11 @@ class MainWindow(QMainWindow):
                     self.table.setItem(row_idx, col_idx, item)
                     col_idx += 1
 
-            # Aktiviere Sortierung wieder
+            # Aktiviere Sortierung wieder und stelle vorherige Sortierreihenfolge wieder her
             self.table.setSortingEnabled(True)
+            if current_sort_column >= 0:
+                self.table.sortItems(current_sort_column, current_sort_order)
+                header.setSortIndicator(current_sort_column, current_sort_order)
             
             # Adjust column widths
             self.table.resizeColumnsToContents()
@@ -646,11 +618,15 @@ class MainWindow(QMainWindow):
             # Neue Spalte: Standardmäßig aufsteigend sortieren
             new_order = Qt.SortOrder.AscendingOrder
         
+        # Aktualisiere den Sortierindikator zuerst
+        header.setSortIndicator(logical_index, new_order)
+        
         # Sortiere die Tabelle
         self.table.sortItems(logical_index, new_order)
         
-        # Aktualisiere den Sortierindikator
-        header.setSortIndicator(logical_index, new_order)
+        # Stelle sicher, dass die Sortierung aktiviert ist
+        if not self.table.isSortingEnabled():
+            self.table.setSortingEnabled(True)
 
 class DeleteConfirmationDialog(QDialog):
     """Dialog zur Bestätigung des Archivierens von RMA-Einträgen."""
