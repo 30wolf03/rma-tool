@@ -26,7 +26,7 @@ from modules.rma_db_gui.database.connection import (
     DatabaseConnection,
     DatabaseConnectionError
 )
-from modules.rma_db_gui.utils.keepass_handler import KeePassHandler
+from modules.rma_db_gui.utils.keepass_handler import KeepassHandler
 
 
 def parse_args() -> argparse.Namespace:
