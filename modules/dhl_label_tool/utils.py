@@ -5,90 +5,18 @@ import logging
 import traceback
 from io import StringIO
 from datetime import datetime
-from PyQt5.QtWidgets import QTextEdit
+from PyQt6.QtWidgets import QTextEdit
+from shared.utils.logger import setup_logger, LogBlock
 
 
 class BlockFormatter(logging.Formatter):
-    """
-    Benutzerdefinierter Formatter, der dafür sorgt, dass jede
-    Logzeile (bzw. jeder Log-Record) mit einem Rahmen versehen wird.
-    """
+    """Formatter für strukturierte Log-Ausgabe."""
     def format(self, record):
-        message = record.getMessage()
-        lines = message.splitlines() if message else []
-        prefix = self.formatTime(record, self.datefmt) + " - " + record.levelname + " - "
+        # Füge Präfix für bessere Lesbarkeit hinzu
+        prefix = "  "
+        lines = super().format(record).split('\n')
         new_lines = [prefix + line for line in lines]
         return "\n".join(new_lines)
-
-
-class LogBlock:
-    """
-    Kontextmanager zur Aggregation mehrerer Logmeldungen in einem
-    gemeinsamen Block mit klarer visueller Trennung.
-    
-    Beispiel:
-        with LogBlock(logger, "Bestellungsverarbeitung") as block:
-            block.section("Adressvalidierung")
-            block("Prüfe Adressdaten...")
-            block.section("Gewichtsberechnung")
-            block("Berechne Paketgewicht...")
-    """
-    def __init__(self, logger, title=None, level=logging.INFO):
-        self.logger = logger
-        self.level = level
-        self.title = title
-        self._start_time = None
-
-    def __enter__(self):
-        self._start_time = datetime.now()
-        if self.title:
-            self.logger.log(self.level, "-" * 80)
-            self.logger.log(self.level, f"=== {self.title} ===")
-            self.logger.log(self.level, f"Start: {self._start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        return self
-
-    def __exit__(self, exc_type, exc_value, tb):
-        end_time = datetime.now()
-        duration = end_time - self._start_time if self._start_time else None
-        
-        if exc_type is not None:
-            self.logger.error(f"Fehler in {self.title if self.title else 'Block'}: {str(exc_value)}")
-            if tb:
-                self.logger.error("Stacktrace:")
-                for line in traceback.format_tb(tb):
-                    self.logger.error(line.strip())
-        else:
-            if self.title:
-                self.logger.log(self.level, f"=== {self.title} erfolgreich abgeschlossen ===")
-                if duration:
-                    self.logger.log(self.level, f"Dauer: {duration.total_seconds():.2f} Sekunden")
-        
-        if self.title:
-            self.logger.log(self.level, "-" * 80)
-
-    def section(self, title):
-        """Erstellt eine neue Sektion innerhalb des Blocks."""
-        self.logger.log(self.level, f"--- {title} ---")
-
-    def __call__(self, message, level=None):
-        """Loggt eine Nachricht mit optionalem Log-Level."""
-        self.logger.log(level or self.level, message)
-
-    def debug(self, message):
-        """Loggt eine Debug-Nachricht."""
-        self.logger.debug(message)
-
-    def info(self, message):
-        """Loggt eine Info-Nachricht."""
-        self.logger.info(message)
-
-    def warning(self, message):
-        """Loggt eine Warnung."""
-        self.logger.warning(message)
-
-    def error(self, message):
-        """Loggt einen Fehler."""
-        self.logger.error(message)
 
 
 def setup_logger():
@@ -126,8 +54,8 @@ def setup_logger():
         logger.setLevel(logging.DEBUG)
         
         # Logge den Start der Anwendung
-        with LogBlock(logger, "Anwendungsstart"):
-            logger.info(f"Log-Datei: {log_filepath}")
+        with LogBlock(logger, logging.INFO) as log:
+            log("Log-Datei: " + log_filepath)
     return logger
 
 

@@ -1,63 +1,161 @@
-/* Globale Stile */
-QMainWindow {
-    background-color: #f0f0f0;
-}
+/* I LOCK IT RMA-Tool - Globales Stylesheet für PyQt6 */
 
+/* Allgemeines Widget-Design */
 QWidget {
-    font-family: "Segoe UI", Arial, sans-serif;
-    font-size: 10pt;
+    background-color: rgb(255, 255, 255);
+    font-family: "Segoe UI", sans-serif;
+    font-weight: normal;
+    color: #000;
 }
 
-/* Button-Stile */
-QPushButton {
-    background-color: #0078d4;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
-    min-width: 100px;
-}
-
-QPushButton:hover {
-    background-color: #106ebe;
-}
-
-QPushButton:pressed {
-    background-color: #005a9e;
-}
-
-QPushButton:disabled {
-    background-color: #cccccc;
-    color: #666666;
-}
-
-/* Eingabefeld-Stile */
+/* Eingabefelder */
 QLineEdit {
-    padding: 6px;
-    border: 1px solid #cccccc;
-    border-radius: 4px;
-    background-color: white;
+    background-color: #f0f0f0;
+    color: #000;
+    border: 1px solid #ccc;
+    padding: 5px;
+    border-radius: 3px;
 }
 
 QLineEdit:focus {
-    border: 1px solid #0078d4;
+    border: 1px solid #3498db;
+    background-color: #ffffff;
 }
 
-/* Dropdown-Stile */
+/* Buttons */
+QPushButton {
+    background-color: rgba(246, 177, 55, 1);
+    border: none;
+    color: #fff;
+    font-weight: bold;
+    padding: 5px 10px;
+    margin: 5px;
+    border-radius: 3px;
+}
+
+QPushButton:hover {
+    background-color: rgb(212, 152, 48);
+}
+
+QPushButton:pressed {
+    background-color: rgb(221, 156, 42);
+}
+
+/* Labels */
+QLabel {
+    color: #000;
+    background: transparent;
+}
+
+/* Benachrichtigungen */
+#notification {
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 5px;
+}
+
+/* Fehlercontainer */
+#errorContainer {
+    background-color: rgba(255, 0, 0, 0.8);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 5px;
+}
+
+/* Zusätzliche Stile für das RMA-Tool */
+
+/* Hauptfenster */
+QMainWindow {
+    background-color: rgb(255, 255, 255);
+}
+
+/* Dialog-Fenster */
+QDialog {
+    background-color: rgb(255, 255, 255);
+}
+
+/* Frame-Container */
+QFrame {
+    background: transparent;
+    border: none;
+}
+
+/* Status-Labels */
+QLabel[class="status"] {
+    font-weight: bold;
+    padding: 5px;
+}
+
+/* Titel-Labels */
+QLabel[class="title"] {
+    color: rgba(246, 177, 55, 1);
+    font-size: 24px;
+    font-weight: bold;
+}
+
+/* Untertitel-Labels */
+QLabel[class="subtitle"] {
+    color: #666;
+    font-size: 12px;
+}
+
+/* Modul-Buttons spezielle Styling */
+QPushButton[class="module-button"] {
+    background-color: rgba(246, 177, 55, 1);
+    border: none;
+    color: #fff;
+    font-weight: bold;
+    padding: 15px;
+    margin: 5px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+QPushButton[class="module-button"]:hover {
+    background-color: rgb(212, 152, 48);
+}
+
+QPushButton[class="module-button"]:pressed {
+    background-color: rgb(221, 156, 42);
+}
+
+/* Dropdown-Stile für PyQt6 */
 QComboBox {
     padding: 6px;
     border: 1px solid #cccccc;
     border-radius: 4px;
     background-color: white;
+    min-height: 20px;
+    padding-right: 25px;
 }
 
 QComboBox:focus {
     border: 1px solid #0078d4;
 }
 
-/* Label-Stile */
-QLabel {
-    color: #333333;
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+    background: transparent;
+}
+
+QComboBox::down-arrow {
+    image: none;
+    border: none;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #666;
+    margin-right: 5px;
+}
+
+QComboBox QAbstractItemView {
+    border: 1px solid #cccccc;
+    background-color: white;
+    selection-background-color: rgba(246, 177, 55, 0.3);
+    outline: none;
 }
 
 /* Fehlermeldungen */
@@ -80,11 +178,20 @@ QTextEdit {
 /* Checkbox-Stile */
 QCheckBox {
     spacing: 5px;
+    background: transparent;
 }
 
 QCheckBox::indicator {
     width: 18px;
     height: 18px;
+    border: 1px solid #cccccc;
+    background-color: white;
+    border-radius: 2px;
+}
+
+QCheckBox::indicator:checked {
+    background-color: rgba(246, 177, 55, 1);
+    border: 1px solid rgba(246, 177, 55, 1);
 }
 
 /* Scrollbar-Stile */
@@ -128,4 +235,14 @@ QScrollBar::handle:horizontal:hover {
 
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     width: 0px;
+}
+
+QGroupBox {
+    background: transparent;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+}
+
+QWidget[styleSheet*="bubble"] {
+    background: transparent !important;
 } 

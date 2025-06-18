@@ -1,26 +1,26 @@
 import requests
 import json
-import re
-from typing import Optional
+import logging
+from typing import Optional, List
 from utils import setup_logger, LogBlock
-from PyQt5.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMessageBox
 
 
 class BillbeeAPI:
     def __init__(self, api_key: str, api_user: str, api_password: str, parent_widget=None):
-        self.logger = setup_logger()
+        self.logger = setup_logger("BillbeeAPI")
+        self.base_url = "https://api.billbee.io/api/v1"
         self.api_key = api_key
         self.api_user = api_user
         self.api_password = api_password
-        self.base_url = "https://api.billbee.io/api/v1"
         self.headers = {
-            "X-Billbee-Api-Key": self.api_key,
+            "X-Api-Key": self.api_key,
             "Content-Type": "application/json"
         }
         self.auth = (self.api_user, self.api_password)
         self.parent_widget = parent_widget  # Speichere das Parent-Widget für Popups
 
-        with LogBlock(self.logger, "Billbee API Initialisierung") as log:
+        with LogBlock(self.logger, logging.INFO) as log:
             log("API Headers initialisiert")
             log("API Key geladen")
             log("Basic Auth geladen")
@@ -31,7 +31,7 @@ class BillbeeAPI:
         Wirft eine Exception, wenn mehrere Kunden zur gleichen E-Mail gefunden werden.
         """
         try:
-            with LogBlock(self.logger, "Kundensuche") as log:
+            with LogBlock(self.logger, logging.INFO) as log:
                 log(f"Suche Kunde anhand E-Mail: {email}")
                 
                 search_endpoint = f"{self.base_url}/search"
@@ -79,7 +79,7 @@ class BillbeeAPI:
         Zuerst wird die Kunden-ID ermittelt und
         anschließend die zugehörigen Adressen abgerufen.
         """
-        with LogBlock(self.logger, "Kundenadressen") as log:
+        with LogBlock(self.logger, logging.INFO) as log:
             customer_id = self.get_customer_id(email)
             if not customer_id:
                 log("Keine Adressen, da keine Kunden-ID gefunden wurde!")
@@ -118,7 +118,7 @@ class BillbeeAPI:
         Zeigt ein Popup an, wenn mehrere Kundenkonten gefunden werden.
         """
         try:
-            with LogBlock(self.logger, "Kundensuche") as log:
+            with LogBlock(self.logger, logging.INFO) as log:
                 log(f"Suche Kunde anhand E-Mail: {email}")
                 
                 search_endpoint = f"{self.base_url}/search"
@@ -150,13 +150,13 @@ class BillbeeAPI:
                     # Zeige Popup mit Hinweis
                     if self.parent_widget:
                         msg = QMessageBox(self.parent_widget)
-                        msg.setIcon(QMessageBox.Information)
+                        msg.setIcon(QMessageBox.Icon.Information)
                         msg.setWindowTitle("Mehrere Kundenkonten gefunden")
                         msg.setText(f"Zu dieser E-Mail-Adresse wurden {len(customers)} Kundenkonten gefunden:")
                         details = "\n".join([f"- {c['Name']}: {c['Addresses']}" for c in customers])
                         msg.setInformativeText(f"Alle Bestellungen werden angezeigt.\n\nDetails:\n{details}")
-                        msg.setStandardButtons(QMessageBox.Ok)
-                        msg.exec_()
+                        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                        msg.exec()
                 elif len(customers) == 1:
                     log(f"Ein Kundenkonto gefunden: {customers[0]['Id']}")
                 else:
@@ -174,7 +174,7 @@ class BillbeeAPI:
         Ruft die Bestellungen aller Kundenkonten anhand der E-Mail-Adresse ab.
         Sammelt die Bestellungen aller gefundenen Kundenkonten und gibt sie zusammen zurück.
         """
-        with LogBlock(self.logger, "Kundenbestellungen") as log:
+        with LogBlock(self.logger, logging.INFO) as log:
             customer_ids = self.get_all_customer_ids(email)
             if not customer_ids:
                 log("Keine Bestellungen, da keine Kundenkonten gefunden wurden!")
@@ -216,64 +216,61 @@ class BillbeeAPI:
         Sucht nach Mustern wie *C1-02-34567, C1-02-34567 oder DBA01-23456.
         """
         try:
-            with LogBlock(self.logger, "Seriennummernsuche") as log:
-                log("Suche nach Seriennummer in den Notizen")
-                
-                # Suche nach dem ersten Muster: *C1-02-34567 oder C1-02-34567
-                pattern1 = r'[*]?C\d{1,2}-\d{2}-\d{5}'
-                match1 = re.search(pattern1, notes)
-                if match1:
-                    log(f"Seriennummer gefunden (Muster 1): {match1.group(0)}")
-                    return match1.group(0)
-
-                # Suche nach dem zweiten Muster: DBA01-23456
-                pattern2 = r'DBA\d{2}-\d{5}'
-                match2 = re.search(pattern2, notes)
-                if match2:
-                    log(f"Seriennummer gefunden (Muster 2): {match2.group(0)}")
-                    return match2.group(0)
-
-                log("Keine Seriennummer in den Notizen gefunden")
-                return None
+            import re
+            # Suche nach Seriennummern-Mustern
+            patterns = [
+                r'\*([A-Z]{1,3}\d{1,2}-\d{2}-\d{5})\*',  # *C1-02-34567*
+                r'([A-Z]{1,3}\d{1,2}-\d{2}-\d{5})',     # C1-02-34567
+                r'([A-Z]{3,5}\d{2}-\d{5})',              # DBA01-23456
+                r'([A-Z]{3,5}\d{6,7})',                  # DBA0123456
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, notes)
+                if match:
+                    return match.group(1)
+            
+            return None
         except Exception as e:
             self.logger.error(f"Fehler beim Extrahieren der Seriennummer: {str(e)}")
             return None
 
     def get_order_notes(self, order_id: str) -> Optional[str]:
         """
-        Ruft die Notizen einer Bestellung ab.
+        Ruft die Notizen zu einer Bestellung ab.
         """
-        try:
-            with LogBlock(self.logger, "Bestellnotizen") as log:
-                # Direkter Endpunkt für die Bestellung
-                order_endpoint = f"{self.base_url}/orders/{order_id}"
-                log(f"Rufe Bestelldaten ab von: {order_endpoint}")
-                
+        with LogBlock(self.logger, logging.INFO) as log:
+            log(f"Rufe Notizen für Bestellung {order_id} ab")
+            
+            notes_endpoint = f"{self.base_url}/orders/{order_id}/notes"
+            
+            try:
                 response = requests.get(
-                    order_endpoint,
+                    notes_endpoint,
                     headers=self.headers,
                     auth=self.auth
                 )
                 response.raise_for_status()
-                order_data = response.json()
+                notes_data = response.json()
                 
                 log.section("API Antwort")
-                log("Vollständige Bestelldaten:")
-                log(json.dumps(order_data, indent=2))
+                log("Gefundene Notizen:")
+                log(json.dumps(notes_data, indent=2))
                 
-                # Extrahiere die Notizen aus den Bestelldaten
-                if order_data.get("Data"):
-                    notes = order_data["Data"].get("SellerComment", "")
-                    log(f"Gefundene Notizen (SellerComment): {notes}")
+                if notes_data.get("Data") and len(notes_data["Data"]) > 0:
+                    # Sammle alle Notizen
+                    all_notes = []
+                    for note in notes_data["Data"]:
+                        if note.get("Text"):
+                            all_notes.append(note["Text"])
                     
-                    if notes:
-                        log(f"Notizen gefunden: {notes}")
-                        return notes
-                
-                log("Keine Notizen für die Bestellung gefunden")
+                    combined_notes = "\n".join(all_notes)
+                    log(f"Notizen erfolgreich abgerufen: {len(all_notes)} Notizen")
+                    return combined_notes
+                else:
+                    log("Keine Notizen gefunden!")
+                    return None
+                    
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Fehler beim Abrufen der Bestellungsnotizen: {str(e)}")
                 return None
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Fehler beim Abrufen der Bestellnotizen: {str(e)}")
-            if hasattr(e.response, 'text'):
-                self.logger.error(f"API-Antwort: {e.response.text}")
-            return None

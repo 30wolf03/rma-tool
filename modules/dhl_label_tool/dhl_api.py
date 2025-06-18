@@ -7,7 +7,8 @@ from utils import setup_logger
 import uuid
 from datetime import datetime
 import base64
-from address_validator import AddressValidator
+from .address_validator import AddressValidator
+from PyQt6.QtWidgets import QMessageBox
 
 
 class DHLAPI:
@@ -352,8 +353,6 @@ class DHLAPI:
     def show_validation_warning_dialog(self, warning_message):
         """Zeigt einen Dialog mit der Validierungswarnung an.
         Gibt True zurück, wenn der Benutzer fortfahren möchte, False wenn nicht."""
-        from PyQt5.QtWidgets import QMessageBox
-        
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Warning)
         msg.setWindowTitle("Validierungswarnung")

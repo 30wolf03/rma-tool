@@ -1,15 +1,14 @@
 import os
 import sys
 import traceback
-from keepass import KeePassHandler
-from label_generator import DHLLabelGenerator
-from login_window import LoginWindow
-from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QFile
-from utils import setup_logger, LogBlock
+from shared.credentials import CentralKeePassHandler, CentralLoginWindow
+from .label_generator import DHLLabelGenerator
+from PyQt6.QtWidgets import QApplication, QMessageBox, QDialog
+from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QFile
+from shared.utils.logger import setup_logger, LogBlock
 import logging
-import resources
+from . import resources
 
 
 def show_error_message(message):
@@ -17,40 +16,28 @@ def show_error_message(message):
     error_dialog.setIcon(QMessageBox.Critical)
     error_dialog.setWindowTitle("Fehler")
     error_dialog.setText(message)
-    error_dialog.exec_()
+    error_dialog.exec()
 
 def get_database_path():
-    if getattr(sys, "frozen", False):
-        # Wenn die Anwendung als ausführbare Datei läuft
-        base_path = os.path.dirname(sys.executable)
-        internal_path = os.path.join(base_path, "_internal")
-        return os.path.join(internal_path, "DHL_Label_Generator_secrets.kdbx")
-    else:
-        # Wenn die Anwendung im Entwicklungsmodus läuft
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(base_path, "DHL_Label_Generator_secrets.kdbx")
+    # Verwende die zentrale KeePass-Datenbank
+    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(base_path, "credentials.kdbx")
 
 def get_style_path():
-    if getattr(sys, "frozen", False):
-        # Wenn die Anwendung als ausführbare Datei läuft
-        base_path = os.path.dirname(sys.executable)
-        internal_path = os.path.join(base_path, "_internal")
-        return os.path.join(internal_path, "global_style.qss")
-    else:
-        # Wenn die Anwendung im Entwicklungsmodus läuft
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(base_path, "global_style.qss")
+    # Verwende das globale I LOCK IT Stylesheet
+    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return os.path.join(base_path, "global_style.qss")
 
 def main():
     try:
         logger = setup_logger()
         
-        with LogBlock(logger, "Initialisierung") as log:
+        with LogBlock(logger, logging.INFO) as log:
             # Verwende die bereits definierte Funktion zur Pfadermittlung
             database_path = get_database_path()
             log("Datenbank-Pfad: " + database_path)
 
-            kp_handler = KeePassHandler(database_path)
+            kp_handler = CentralKeePassHandler()
             app = QApplication(sys.argv)
             app.setWindowIcon(QIcon(":/icons/icon.ico"))
 
@@ -61,7 +48,8 @@ def main():
             
             if os.path.exists(style_path):
                 with open(style_path, "r", encoding='utf-8') as f:
-                    app.setStyleSheet(f.read())
+                    stylesheet_content = f.read()
+                    app.setStyleSheet(stylesheet_content)
                     log("Stylesheet erfolgreich geladen")
             else:
                 logger.error("Stylesheet nicht gefunden: " + style_path)
@@ -69,11 +57,11 @@ def main():
             log.section("KeePass")
             log("Initialisiere KeePass Handler")
             
-            login_window = LoginWindow(kp_handler)
-            if login_window.exec_() != QDialog.Accepted:
+            login_window = CentralLoginWindow(kp_handler)
+            if login_window.exec() != QDialog.DialogCode.Accepted:
                 sys.exit(0)
 
-        with LogBlock(logger, "API Zugangsdaten") as log:
+        with LogBlock(logger, logging.INFO) as log:
             try:
                 log.section("DHL API")
                 dhl_api_username, dhl_api_password = kp_handler.get_credentials("DHL API Zugangsdaten")
@@ -142,7 +130,7 @@ def main():
                 show_error_message(f"Fehler beim Laden der DHL Billing Number: {str(e)}")
                 sys.exit(1)
 
-        with LogBlock(logger, "Anwendungsstart") as log:
+        with LogBlock(logger, logging.INFO) as log:
             main_window = DHLLabelGenerator()
             main_window.setWindowIcon(QIcon(":/icons/icon.ico"))
             
@@ -160,11 +148,38 @@ def main():
             
             log("Hauptfenster wird angezeigt")
             main_window.show()
-            sys.exit(app.exec_())
+            sys.exit(app.exec())
     except Exception as e:
         logger.error(f"Fehler beim Starten der Anwendung: {str(e)}")
         show_error_message(f"Fehler beim Starten der Anwendung: {str(e)}")
         sys.exit(1)
+
+def start_dhl_label_tool():
+    """Startet das DHL Label Tool direkt mit lokalen Modulen."""
+    try:
+        # Füge das aktuelle Verzeichnis zum Python-Pfad hinzu
+        import sys
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        sys.path.insert(0, current_dir)
+        
+        # Verwende lokale Imports mit PyQt6
+        from keepass import KeePassHandler
+        from login_window import LoginWindow
+        from utils import setup_logger, LogBlock
+        from PyQt6.QtWidgets import QApplication, QMessageBox, QDialog
+        from PyQt6.QtGui import QIcon
+        from PyQt6.QtCore import QFile
+        import logging
+        import resources
+        
+        # Führe die ursprüngliche main-Funktion aus
+        main()
+        
+    except Exception as e:
+        print(f"Fehler beim Starten des DHL Label Tools: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
