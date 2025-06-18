@@ -1,7 +1,7 @@
 """Hauptanwendung für das RMA-Tool.
 
 Diese Datei dient als zentraler Einstiegspunkt für die gesamte Anwendung.
-Sie koordiniert die verschiedenen Module (RMA-DB-GUI, DHL-Label-Tool, etc.)
+Sie koordiniert die verschiedenen Module (RMA-DB-GUI, dhl_label_tool, etc.)
 und stellt die Hauptfunktionalität bereit.
 """
 
@@ -89,10 +89,10 @@ def start_rma_db_gui() -> None:
 
 
 def start_dhl_label_tool() -> None:
-    """Startet das DHL-Label-Tool Modul."""
-    # TODO: Implementiere DHL-Label-Tool Start
-    logger.info("DHL-Label-Tool wird gestartet...")
-    raise NotImplementedError("DHL-Label-Tool noch nicht implementiert")
+    """Startet das dhl_label_tool Modul."""
+    # TODO: Implementiere dhl_label_tool Start
+    logger.info("dhl_label_tool wird gestartet...")
+    raise NotImplementedError("dhl_label_tool noch nicht implementiert")
 
 
 def main() -> None:
