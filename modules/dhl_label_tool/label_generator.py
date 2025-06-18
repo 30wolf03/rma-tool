@@ -3,20 +3,19 @@ import time
 import base64
 import json
 import requests
-import utils
 import sys
 import traceback
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QLineEdit, 
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QLineEdit, 
                             QPushButton, QFormLayout, QTextEdit, QMessageBox,
-                            QInputDialog, QComboBox, QLabel, QHBoxLayout, QCheckBox, QShortcut, QDockWidget, QApplication)
+                            QInputDialog, QComboBox, QLabel, QHBoxLayout, QCheckBox, QDockWidget, QApplication)
+from PyQt6.QtGui import QShortcut, QKeySequence
 
-from zendesk_api import get_customer_email, update_problem_description, update_serial_number, update_order_info
-from billbee_api import BillbeeAPI
-from utils import setup_logger, BlockFormatter, validate_inputs, validate_reference_number
-from preview_window import PreviewWindow
-from dhl_api import DHLAPI as DHL_API_CLASS
+from .zendesk_api import get_customer_email, update_problem_description, update_serial_number, update_order_info
+from .billbee_api import BillbeeAPI
+from shared.utils.logger import setup_logger
+from .preview_window import PreviewWindow
+from .dhl_api import DHLAPI as DHL_API_CLASS
 from datetime import datetime
 
 # Globaler Exception Handler
@@ -107,7 +106,7 @@ class DHLLabelGenerator(QMainWindow):
             # Direkt nach dem E-Mail-Feld im Formular hinzufügen:
             self.address_dropdown = QComboBox()
             # Shortcut definieren, der im gesamten Fenster gilt:
-            self.enter_shortcut = QShortcut(QKeySequence(Qt.Key_Return), self)
+            self.enter_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Return), self)
             self.enter_shortcut.activated.connect(self.trigger_fetch_action)
             # Verbinde den Dropdown-Änderungssignal mit einem Slot:
             self.address_dropdown.currentIndexChanged.connect(self.on_address_selected)
@@ -167,8 +166,8 @@ class DHLLabelGenerator(QMainWindow):
             self.log_text.setReadOnly(True)
             
             # Füge den GUI-Handler zum Logger hinzu
-            from utils import add_gui_handler
-            self.logger = add_gui_handler(self.log_text)
+            # TODO: Implementiere GUI-Handler für zentrale Infrastruktur
+            # self.logger = add_gui_handler(self.log_text)
 
             # Button Layout
             button_layout = QHBoxLayout()
@@ -181,7 +180,7 @@ class DHLLabelGenerator(QMainWindow):
             self.generate_button.setEnabled(False)
             self.clear_fields_button = QPushButton("Alle leeren")
             self.clear_fields_button.setFixedSize(100, 30)
-            self.clear_fields_button.clicked.connect(lambda: utils.clear_all_fields(self))
+            self.clear_fields_button.clicked.connect(self.clear_all_fields)
             
             button_layout.addWidget(self.clear_fields_checkbox)
             button_layout.addStretch()
@@ -190,7 +189,7 @@ class DHLLabelGenerator(QMainWindow):
 
             # Verbindung mit Dropdown
             self.type_dropdown.currentIndexChanged.connect(self.check_type_selection)
-            self.type_dropdown.currentIndexChanged.connect(self.update_reference_field)
+            self.type_dropdown.currentIndexChanged.connect(lambda: self.update_reference_field())
             
             # Layout zusammenbauen
             layout.addLayout(form_layout)
@@ -600,9 +599,10 @@ class DHLLabelGenerator(QMainWindow):
         elif typ_text == "Reparatur":
             typ = "Rep"
         elif typ_text == "Test":
-            typ = "test"
+            typ = "Test"
         else:
-            typ = typ_text.upper()
+            # Verwende den Text direkt, ohne weitere Verarbeitung
+            typ = typ_text
 
         # Baue die Referenz mit Seriennummer
         if serial_number:
@@ -897,7 +897,7 @@ class DHLLabelGenerator(QMainWindow):
 
             # Lösche die Felder wenn auto clear aktiviert ist
             if self.clear_fields_checkbox.isChecked():
-                utils.clear_all_fields(self)
+                self.clear_all_fields()
 
         except Exception as e:
             self.logger.error(f"Fehler bei der Label-Generierung: {str(e)}")
@@ -906,6 +906,24 @@ class DHLLabelGenerator(QMainWindow):
     def on_clear_fields_changed(self, state):
         # Implementiere die Logik, wenn sich die Checkbox "Felder automatisch leeren" ändert
         pass
+
+    def clear_all_fields(self):
+        """Alle Eingabefelder leeren"""
+        self.ticket_nr_input.clear()
+        self.type_dropdown.setCurrentIndex(0)
+        self.name_input.clear()
+        self.street_input.clear()
+        self.house_input.clear()
+        self.additional_info_input.clear()
+        self.postal_input.clear()
+        self.city_input.clear()
+        self.email_input.clear()
+        self.phone_input.clear()
+        self.ref_input.clear()
+        self.weight_input.clear()
+        self.problem_description.clear()
+        self.orders_dropdown.setCurrentIndex(0)
+        self.address_dropdown.clear()
 
     def load_api_credentials(self, master_password):
         """Lädt die API-Credentials aus der Keepass-Datei."""

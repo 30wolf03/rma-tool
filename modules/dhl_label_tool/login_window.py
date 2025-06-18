@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -6,10 +6,10 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QPushButton,
     QMessageBox,
-    QDesktopWidget
+    QApplication
 )
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
-from PyQt5.QtGui import QIcon
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
+from PyQt6.QtGui import QIcon
 import time
 from utils import setup_logger
 from icons import get_eye_icon, svg_to_pixmap, create_animated_svg
@@ -85,7 +85,8 @@ class LoginWindow(QDialog):
 
     def center_window(self):
         """Zentriert das Fenster auf dem Bildschirm."""
-        screen_center = QDesktopWidget().availableGeometry().center()
+        screen = QApplication.primaryScreen()
+        screen_center = screen.availableGeometry().center()
         frame_geometry = self.frameGeometry()
         frame_geometry.moveCenter(screen_center)
         self.move(frame_geometry.topLeft())

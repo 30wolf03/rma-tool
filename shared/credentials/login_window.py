@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QMessageBox,
-    QDesktopWidget,
+    QApplication,
 )
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
 from PyQt6.QtGui import QIcon
@@ -59,7 +59,12 @@ class CentralLoginWindow(QDialog):
 
         # Title label
         title_label = QLabel("RMA-Tool - Zentrale Anmeldung")
-        title_label.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 10px;")
+        title_label.setStyleSheet("""
+            font-size: 14px; 
+            font-weight: bold; 
+            margin-bottom: 10px;
+            color: #333333;
+        """)
         layout.addWidget(title_label)
 
         # Description label
@@ -67,6 +72,7 @@ class CentralLoginWindow(QDialog):
             "Bitte das Master-Passwort für die zentrale KeePass-Datenbank eingeben:"
         )
         desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: #333333;")
         layout.addWidget(desc_label)
 
         # Password input section
@@ -107,22 +113,6 @@ class CentralLoginWindow(QDialog):
         self.login_button = QPushButton("Anmelden", self)
         self.login_button.setDefault(True)
         self.login_button.clicked.connect(self._handle_login)
-        self.login_button.setStyleSheet("""
-            QPushButton {
-                background: #0078d4;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #106ebe;
-            }
-            QPushButton:pressed {
-                background: #005a9e;
-            }
-        """)
         layout.addWidget(self.login_button)
 
         # Center window
@@ -141,7 +131,8 @@ class CentralLoginWindow(QDialog):
 
     def _center_window(self) -> None:
         """Center the window on the screen."""
-        screen_center = QDesktopWidget().availableGeometry().center()
+        screen = QApplication.primaryScreen()
+        screen_center = screen.availableGeometry().center()
         frame_geometry = self.frameGeometry()
         frame_geometry.moveCenter(screen_center)
         self.move(frame_geometry.topLeft())

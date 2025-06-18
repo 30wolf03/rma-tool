@@ -1,7 +1,7 @@
 import base64
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap, QPainter, QFont
-from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap, QPainter, QFont
+from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
 
 
 class PreviewWindow(QWidget):
