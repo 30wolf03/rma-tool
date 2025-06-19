@@ -215,10 +215,15 @@ class ModuleSelector(QMainWindow):
         with LogBlock(self.logger) as log:
             try:
                 log.section("Module Import")
-                from modules.dhl_label_tool.main import start_dhl_label_tool
+                from modules.dhl_label_tool.main import start_dhl_label_tool_widget
                 
                 log.section("Module Execution")
-                start_dhl_label_tool()
+                # Verwende das bereits geöffnete KeePass-Handler-Objekt
+                window = start_dhl_label_tool_widget(self.kp_handler)
+                if window:
+                    log("DHL Label Tool erfolgreich gestartet")
+                else:
+                    log("DHL Label Tool konnte nicht gestartet werden")
                 
             except ImportError as e:
                 log(f"Import error: {str(e)}")
@@ -240,15 +245,13 @@ class ModuleSelector(QMainWindow):
         with LogBlock(self.logger) as log:
             try:
                 log.section("Module Import")
-                from modules.rma_db_gui.main_window import MainWindow
+                from modules.rma_db_gui.gui.main_window import MainWindow
                 
                 log.section("Module Execution")
-                # Hier würde die RMA Database GUI gestartet werden
-                QMessageBox.information(
-                    self,
-                    "Info",
-                    "RMA Database GUI Modul wird noch implementiert."
-                )
+                # Starte das RMA Database GUI Modul
+                rma_window = MainWindow()
+                rma_window.show()
+                log("RMA Database GUI erfolgreich gestartet")
                 
             except ImportError as e:
                 log(f"Import error: {str(e)}")
