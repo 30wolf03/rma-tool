@@ -50,6 +50,10 @@ from ..utils.keepass_handler import KeepassHandler, KeepassError
 from .dialogs import DeleteConfirmationDialog
 from .login_window import LoginDialog
 
+# Import the credential cache
+from shared.credentials.credential_cache import get_credential_cache
+from shared.credentials.keepass_handler import CentralKeePassHandler
+
 # Configure logging
 logger.remove()  # Remove default handler
 
@@ -141,35 +145,27 @@ class MainWindow(QMainWindow):
     """
 
     def __init__(self) -> None:
-        """Initialize the main window."""
-        super().__init__()
+        """Initialize the main window.
         
-        # Login-Dialog anzeigen
-        login = LoginDialog(self)
-        if login.exec() != QDialog.DialogCode.Accepted:
-            sys.exit(0)
-            
-        try:
-            self.current_user, password = login.get_credentials()
-        except ValueError as e:
-            logger.error(f"Login fehlgeschlagen: {e}")
+        Args:
+            central_kp_handler: Der zentrale KeePass-Handler mit den gespeicherten Credentials
+        """
+        super().__init__()
+        self.credential_cache = get_credential_cache()
+        # Hole zentralen Handler aus Cache
+        self.central_kp_handler = self.credential_cache.get_keepass_handler()
+        if not self.central_kp_handler or not self.central_kp_handler.is_database_open():
+            QMessageBox.critical(self, "Fehler", "Keine zentrale Authentifizierung gefunden. Bitte Anwendung neu starten.")
             sys.exit(1)
-            
         self._setup_ui()
         self._setup_toolbar()
         self._setup_status_bar()
         self._setup_connections()
-
-        # Initialize database connection
-        self.db_connection: Optional[DatabaseConnection] = None
-        
-        # Versuche direkt die Verbindung herzustellen
         try:
-            keepass_handler = KeepassHandler(password)
-            self.db_connection = DatabaseConnection(keepass_handler)
+            self.db_connection = DatabaseConnection(self.central_kp_handler)
             self._show_success("Erfolg", "Erfolgreich mit der Datenbank verbunden!")
             self.load_rma_data()
-        except (KeepassError, DatabaseConnectionError) as e:
+        except Exception as e:
             self._show_error("Verbindungsfehler", str(e))
             sys.exit(1)
 

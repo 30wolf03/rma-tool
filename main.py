@@ -11,6 +11,7 @@ from typing import Optional
 
 # Zentrale Infrastruktur importieren
 from shared.credentials import CentralKeePassHandler, CentralLoginWindow
+from shared.credentials.credential_cache import initialize_credential_cache, get_credential_cache
 from shared.utils.logger import setup_logger, LogBlock
 
 # PyQt6 Imports
@@ -29,10 +30,11 @@ class ModuleSelector(QMainWindow):
         super().__init__()
         self.logger = setup_logger("RMA-Tool.Main")
         self.kp_handler: Optional[CentralKeePassHandler] = None
+        self.credential_cache = None
         
         self.setWindowTitle("RMA-Tool - Modulauswahl")
-        self.setGeometry(100, 100, 600, 400)
-        self.setMinimumSize(600, 400)
+        self.setGeometry(100, 100, 600, 700)
+        self.setMinimumSize(600, 700)
         
         # Erst authentifizieren, dann UI anzeigen
         if self._authenticate():
@@ -115,15 +117,6 @@ class ModuleSelector(QMainWindow):
         rma_button.clicked.connect(self._start_rma_database_gui)
         button_layout.addWidget(rma_button)
         
-        # Database Sync Button
-        sync_button = self._create_module_button(
-            "Database Sync",
-            "Datenbank-Synchronisation und CSV-Import",
-            "🔄"
-        )
-        sync_button.clicked.connect(self._start_database_sync)
-        button_layout.addWidget(sync_button)
-        
         parent_layout.addWidget(button_frame)
         
     def _create_module_button(self, title: str, description: str, icon: str) -> QPushButton:
@@ -160,6 +153,11 @@ class ModuleSelector(QMainWindow):
         self.kp_status_label.setStyleSheet("color: #dc3545;")
         status_layout.addWidget(self.kp_status_label)
         
+        # Credential Cache Status
+        self.cache_status_label = QLabel("🔴 Credential Cache: Nicht aktiv")
+        self.cache_status_label.setStyleSheet("color: #dc3545;")
+        status_layout.addWidget(self.cache_status_label)
+        
         # Log-Status
         self.log_status_label = QLabel("🟢 Logging: Aktiv")
         self.log_status_label.setStyleSheet("color: #28a745;")
@@ -176,17 +174,31 @@ class ModuleSelector(QMainWindow):
         
     def _update_status(self):
         """Status-Anzeige aktualisieren."""
+        # KeePass Status
         if self.kp_handler and self.kp_handler.is_database_open():
             self.kp_status_label.setText("🟢 KeePass: Verbunden")
             self.kp_status_label.setStyleSheet("color: #28a745;")
         else:
             self.kp_status_label.setText("🔴 KeePass: Nicht verbunden")
             self.kp_status_label.setStyleSheet("color: #dc3545;")
+        
+        # Credential Cache Status
+        if self.credential_cache and self.credential_cache.has_valid_session():
+            cache_stats = self.credential_cache.get_cache_stats()
+            self.cache_status_label.setText(f"🟢 Credential Cache: Aktiv ({cache_stats['valid_credentials']} Credentials)")
+            self.cache_status_label.setStyleSheet("color: #28a745;")
+        else:
+            self.cache_status_label.setText("🔴 Credential Cache: Nicht aktiv")
+            self.cache_status_label.setStyleSheet("color: #dc3545;")
             
     def _authenticate(self) -> bool:
         """KeePass-Authentifizierung durchführen."""
         with LogBlock(self.logger) as log:
             try:
+                # Credential Cache initialisieren
+                self.credential_cache = initialize_credential_cache()
+                log("Credential cache initialized")
+                
                 if not self.kp_handler:
                     self.kp_handler = CentralKeePassHandler()
                     log("Central KeePass handler initialized")
@@ -197,6 +209,14 @@ class ModuleSelector(QMainWindow):
                     if login_window.exec() != QDialog.DialogCode.Accepted:
                         log("Login cancelled by user")
                         return False
+                    
+                    # Benutzer-Credentials aus dem Login-Fenster extrahieren
+                    credentials = login_window.get_credentials()
+                    if credentials:
+                        initials, master_pw = credentials
+                        self.kp_handler.set_user_credentials(initials, master_pw)
+                        log(f"User credentials stored for: {initials}")
+                    
                     log("Login successful")
                 
                 return True
@@ -215,15 +235,17 @@ class ModuleSelector(QMainWindow):
         with LogBlock(self.logger) as log:
             try:
                 log.section("Module Import")
-                from modules.dhl_label_tool.main import start_dhl_label_tool_widget
+                # Importiere das DHL-Tool direkt
+                import sys
+                import os
+                dhl_path = os.path.join(os.path.dirname(__file__), "modules", "dhl_label_tool")
+                sys.path.insert(0, dhl_path)
+                from main import main as dhl_main
                 
                 log.section("Module Execution")
-                # Verwende das bereits geöffnete KeePass-Handler-Objekt
-                window = start_dhl_label_tool_widget(self.kp_handler)
-                if window:
-                    log("DHL Label Tool erfolgreich gestartet")
-                else:
-                    log("DHL Label Tool konnte nicht gestartet werden")
+                # Starte das DHL-Tool direkt
+                dhl_main()
+                log("DHL Label Tool erfolgreich gestartet")
                 
             except ImportError as e:
                 log(f"Import error: {str(e)}")
@@ -248,7 +270,7 @@ class ModuleSelector(QMainWindow):
                 from modules.rma_db_gui.gui.main_window import MainWindow
                 
                 log.section("Module Execution")
-                # Starte das RMA Database GUI Modul
+                # Starte das RMA Database GUI Modul ohne Parameter
                 rma_window = MainWindow()
                 rma_window.show()
                 log("RMA Database GUI erfolgreich gestartet")
@@ -266,31 +288,6 @@ class ModuleSelector(QMainWindow):
                     self,
                     "Ausführungsfehler",
                     f"Fehler beim Starten der RMA Database GUI:\n{str(e)}"
-                )
-                
-    def _start_database_sync(self):
-        """Database Sync starten."""
-        with LogBlock(self.logger) as log:
-            try:
-                log.section("Module Import")
-                from modules.db_sync.sync import main as sync_main
-                
-                log.section("Module Execution")
-                sync_main()
-                
-            except ImportError as e:
-                log(f"Import error: {str(e)}")
-                QMessageBox.critical(
-                    self,
-                    "Modul-Fehler",
-                    f"Fehler beim Laden des Database Sync Moduls:\n{str(e)}"
-                )
-            except Exception as e:
-                log(f"Module execution error: {str(e)}")
-                QMessageBox.critical(
-                    self,
-                    "Ausführungsfehler",
-                    f"Fehler beim Starten des Database Sync:\n{str(e)}"
                 )
 
 

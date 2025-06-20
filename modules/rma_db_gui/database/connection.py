@@ -83,7 +83,11 @@ class DatabaseConnection:
         """
         tmp_key_path: Optional[str] = None
         try:
-            ssh_creds: Dict[str, str] = self.keepass_handler.get_ssh_credentials()
+            # Polymorphie: CentralKeePassHandler oder KeepassHandler
+            if hasattr(self.keepass_handler, 'get_ssh_credentials'):
+                ssh_creds: Dict[str, str] = self.keepass_handler.get_ssh_credentials()
+            else:
+                raise SSHConnectionError("keepass_handler does not support get_ssh_credentials")
             url: str = ssh_creds["url"]
             
             # Parse hostname and port from URL
@@ -162,7 +166,11 @@ class DatabaseConnection:
             raise MySQLConnectionError("SSH tunnel not established")
 
         try:
-            mysql_creds: Dict[str, str] = self.keepass_handler.get_mysql_credentials()
+            # Polymorphie: CentralKeePassHandler oder KeepassHandler
+            if hasattr(self.keepass_handler, 'get_mysql_credentials'):
+                mysql_creds: Dict[str, str] = self.keepass_handler.get_mysql_credentials()
+            else:
+                raise MySQLConnectionError("keepass_handler does not support get_mysql_credentials")
             logger.debug(f"MySQL-Verbindungsversuch mit Benutzer: {mysql_creds['username']}")
 
             connection = pymysql.connect(
