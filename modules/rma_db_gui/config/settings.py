@@ -13,7 +13,8 @@ import sys
 
 # Base paths
 MODULE_DIR: Path = Path(__file__).parent.parent
-CREDENTIALS_FILE: Path = MODULE_DIR / "credentials.kdbx"
+# Verwende die credentials.kdbx aus dem Root-Verzeichnis der Anwendung
+CREDENTIALS_FILE: Path = MODULE_DIR.parent.parent / "credentials.kdbx"
 
 # Logging settings
 LOG_DIR: Path = MODULE_DIR / "logs"

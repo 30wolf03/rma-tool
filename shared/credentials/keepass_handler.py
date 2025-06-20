@@ -54,6 +54,7 @@ class CentralKeePassHandler:
         self.logger = logging.getLogger(__name__)
         self.database_path = database_path or self._get_default_database_path()
         self._kp: Optional[PyKeePass] = None
+        self._user_credentials: Optional[Tuple[str, str]] = None  # (initials, master_password)
         
         self.logger.info(f"CentralKeePassHandler initialized with database: {self.database_path}")
     
@@ -99,6 +100,24 @@ class CentralKeePassHandler:
             self.logger.error(f"Error message: {str(e)}")
             self.logger.error("-" * 80)
             return False
+    
+    def set_user_credentials(self, initials: str, master_password: str) -> None:
+        """Set the user credentials for use across all modules.
+        
+        Args:
+            initials: User's initials/kürzel
+            master_password: KeePass master password
+        """
+        self._user_credentials = (initials, master_password)
+        self.logger.info(f"User credentials set for: {initials}")
+    
+    def get_user_credentials(self) -> Optional[Tuple[str, str]]:
+        """Get the stored user credentials.
+        
+        Returns:
+            Tuple of (initials, master_password) or None if not set
+        """
+        return self._user_credentials
     
     def get_credentials(self, entry_title: str, module: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
         """Get credentials with priority order.
@@ -189,4 +208,51 @@ class CentralKeePassHandler:
         Returns:
             True if database is open, False otherwise
         """
-        return self._kp is not None 
+        return self._kp is not None
+
+    def get_ssh_credentials(self) -> dict:
+        """Get SSH connection credentials from the KeePass database.
+
+        Returns:
+            Dict containing SSH credentials (username, password, private_key, url).
+        Raises:
+            Exception: If required entries are missing.
+        """
+        if not self._kp:
+            raise Exception("KeePass database not loaded")
+        entry = self._kp.find_entries(title="SSH", first=True)
+        if not entry:
+            raise Exception("Entry 'SSH' not found in KeePass database")
+        # Suche nach der angehängten OpenSSH-Key-Datei im SSH-Eintrag
+        private_key = None
+        for attachment in entry.attachments:
+            if attachment.filename == "traccar.key":
+                private_key = attachment.data.decode('utf-8')
+                break
+        if not private_key:
+            raise Exception("Private key 'traccar.key' not found in SSH entry")
+        return {
+            "username": entry.username or "",
+            "password": entry.password or "",
+            "private_key": private_key,
+            "url": entry.url or "",
+        }
+
+    def get_mysql_credentials(self) -> dict:
+        """Get MySQL connection credentials from the KeePass database.
+
+        Returns:
+            Dict containing MySQL credentials (username, password, host).
+        Raises:
+            Exception: If the MySQL entry is missing.
+        """
+        if not self._kp:
+            raise Exception("KeePass database not loaded")
+        entry = self._kp.find_entries(title="MySQL", first=True)
+        if not entry:
+            raise Exception("Entry 'MySQL' not found in KeePass database")
+        return {
+            "username": entry.username or "",
+            "password": entry.password or "",
+            "host": entry.url or "localhost",
+        } 

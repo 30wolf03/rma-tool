@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
 from PyQt6.QtGui import QIcon
 import time
-from utils import setup_logger
+from modules.dhl_label_tool.utils import setup_logger
 from icons import get_eye_icon, svg_to_pixmap, create_animated_svg
 
 

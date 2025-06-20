@@ -3,7 +3,7 @@ import requests
 import json
 import time
 from typing import Dict, Any
-from utils import setup_logger
+from modules.dhl_label_tool.utils import setup_logger
 import uuid
 from datetime import datetime
 import base64

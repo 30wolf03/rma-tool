@@ -2,7 +2,7 @@ import requests
 import json
 import logging
 from typing import Optional, List
-from utils import setup_logger, LogBlock
+from modules.dhl_label_tool.utils import setup_logger, LogBlock
 from PyQt6.QtWidgets import QMessageBox
 
 

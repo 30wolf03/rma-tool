@@ -2,7 +2,7 @@ from typing import Dict, Any, Tuple, Optional
 import requests
 from datetime import datetime
 import uuid
-from utils import setup_logger
+from modules.dhl_label_tool.utils import setup_logger
 
 class AddressValidator:
     def __init__(self, dhl_api_client):

@@ -1,19 +1,22 @@
 import os
 import sys
 import traceback
-from shared.credentials import CentralKeePassHandler, CentralLoginWindow
-from .label_generator import DHLLabelGenerator
+from shared.credentials.credential_cache import get_credential_cache
+from shared.credentials.keepass_handler import CentralKeePassHandler
+from modules.dhl_label_tool.label_generator import DHLLabelGenerator
 from PyQt6.QtWidgets import QApplication, QMessageBox, QDialog
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import QFile
-from shared.utils.logger import setup_logger, LogBlock
+from modules.dhl_label_tool.utils import setup_logger, LogBlock
 import logging
-from . import resources
+import modules.dhl_label_tool.resources as resources
+from modules.dhl_label_tool.login_window import LoginWindow
 
+# Optional: Importiere das LoginWindow für den Notfall-Login
 
 def show_error_message(message):
     error_dialog = QMessageBox()
-    error_dialog.setIcon(QMessageBox.Critical)
+    error_dialog.setIcon(QMessageBox.Icon.Critical)
     error_dialog.setWindowTitle("Fehler")
     error_dialog.setText(message)
     error_dialog.exec()
@@ -130,128 +133,90 @@ def start_dhl_label_tool_widget(kp_handler: CentralKeePassHandler):
 def main():
     try:
         logger = setup_logger()
-        
-        with LogBlock(logger, logging.INFO) as log:
-            # Verwende die bereits definierte Funktion zur Pfadermittlung
-            database_path = get_database_path()
-            log("Datenbank-Pfad: " + database_path)
+        logger.info("Anwendung wird gestartet")
 
-            kp_handler = CentralKeePassHandler()
+        # Verwende die bestehende QApplication statt eine neue zu erstellen
+        app = QApplication.instance()
+        if app is None:
+            # Fallback: Erstelle eine neue QApplication nur wenn keine existiert
             app = QApplication(sys.argv)
-            app.setWindowIcon(QIcon(":/icons/icon.ico"))
+        
+        app.setWindowIcon(QIcon(":/icons/icon.ico"))
+        
+        # Lade Stylesheet
+        stylesheet_path = ":/global_style.qss"
+        qss_file = QFile(stylesheet_path)
+        if qss_file.open(QFile.OpenModeFlag.ReadOnly | QFile.OpenModeFlag.Text):
+            stylesheet = str(qss_file.readAll(), encoding="utf-8")
+            app.setStyleSheet(stylesheet)
+        else:
+            logger.error("Das Stylesheet konnte nicht geladen werden.")
 
-            # Lade das Stylesheet
-            style_path = get_style_path()
-            log.section("Stylesheet")
-            log("Stylesheet-Pfad: " + style_path)
-            
-            if os.path.exists(style_path):
-                with open(style_path, "r", encoding='utf-8') as f:
-                    stylesheet_content = f.read()
-                    app.setStyleSheet(stylesheet_content)
-                    log("Stylesheet erfolgreich geladen")
-            else:
-                logger.error("Stylesheet nicht gefunden: " + style_path)
-
-            log.section("KeePass")
-            log("Initialisiere KeePass Handler")
-            
-            login_window = CentralLoginWindow(kp_handler)
+        # Versuche zentralen Handler aus dem CredentialCache zu holen
+        credential_cache = get_credential_cache()
+        kp_handler = credential_cache.get_keepass_handler()
+        if not kp_handler or not kp_handler.is_database_open():
+            # Kein zentraler Login vorhanden, zeige Login-Fenster
+            logger.info("Kein zentraler Login gefunden, zeige Login-Fenster")
+            database_path = get_database_path()
+            kp_handler = CentralKeePassHandler(database_path)
+            login_window = LoginWindow(kp_handler)
             if login_window.exec() != QDialog.DialogCode.Accepted:
-                sys.exit(0)
+                return None  # Kein sys.exit(), nur return None
+            # Nach erfolgreichem Login im Cache speichern
+            credential_cache.set_keepass_handler(kp_handler)
+        else:
+            logger.info("Zentraler Login gefunden, nutze zentralen Handler")
 
-        with LogBlock(logger, logging.INFO) as log:
-            try:
-                log.section("DHL API")
-                dhl_api_username, dhl_api_password = kp_handler.get_credentials("DHL API Zugangsdaten")
-                log("DHL API Zugangsdaten geladen")
-                if not all([dhl_api_username, dhl_api_password]):
-                    show_error_message("Fehler: DHL API Zugangsdaten (Username/Password) konnten nicht geladen werden.")
-                    sys.exit(1)
-            except Exception as e:
-                logger.error(f"Fehler beim Laden der DHL API Zugangsdaten: {str(e)}")
-                show_error_message(f"Fehler beim Laden der DHL API Zugangsdaten: {str(e)}")
-                sys.exit(1)
-
-            try:
-                log.section("DHL Client")
-                client_id, client_secret = kp_handler.get_credentials("DHL Client Credentials")
-                log("DHL Client Credentials geladen")
-                if not all([client_id, client_secret]):
-                    show_error_message("Fehler: DHL Client Credentials (ID/Secret) konnten nicht geladen werden.")
-                    sys.exit(1)
-            except Exception as e:
-                logger.error(f"Fehler beim Laden der DHL Client Credentials: {str(e)}")
-                show_error_message(f"Fehler beim Laden der DHL Client Credentials: {str(e)}")
-                sys.exit(1)
-
-            try:
-                log.section("Zendesk")
-                zendesk_email, zendesk_token = kp_handler.get_credentials("Zendesk API Token")
-                log("Zendesk API Zugangsdaten geladen")
-                if not all([zendesk_email, zendesk_token]):
-                    show_error_message("Fehler: Zendesk API Zugangsdaten (Email/Token) konnten nicht geladen werden.")
-                    sys.exit(1)
-            except Exception as e:
-                logger.error(f"Fehler beim Laden der Zendesk API Zugangsdaten: {str(e)}")
-                show_error_message(f"Fehler beim Laden der Zendesk API Zugangsdaten: {str(e)}")
-                sys.exit(1)
-
-            try:
-                log.section("Billbee")
-                bb_api_key = kp_handler.get_credentials("BillBee API Key")[1]
-                log("Billbee API Key geladen")
-                if not bb_api_key:
-                    show_error_message("Fehler: Billbee API Key konnte nicht geladen werden.")
-                    sys.exit(1)
-
-                bb_auth = kp_handler.get_credentials("BillBee Basic Auth")
-                bb_api_user = bb_auth[0]
-                bb_api_password = bb_auth[1]
-                log("Billbee Basic Auth Daten geladen")
-                if not all([bb_api_user, bb_api_password]):
-                    show_error_message("Fehler: Billbee Basic Auth Daten konnten nicht geladen werden.")
-                    sys.exit(1)
-            except Exception as e:
-                logger.error(f"Fehler beim Laden der Billbee Zugangsdaten: {str(e)}")
-                show_error_message(f"Fehler beim Laden der Billbee Zugangsdaten: {str(e)}")
-                sys.exit(1)
-
-            try:
-                log.section("DHL Billing")
-                billing_number = kp_handler.get_credentials("DHL Billing")[0]
-                log("DHL Billing Number geladen")
-                if not billing_number:
-                    show_error_message("Fehler: DHL Billing Number konnte nicht geladen werden.")
-                    sys.exit(1)
-            except Exception as e:
-                logger.error(f"Fehler beim Laden der DHL Billing Number: {str(e)}")
-                show_error_message(f"Fehler beim Laden der DHL Billing Number: {str(e)}")
-                sys.exit(1)
-
+        # Starte das Hauptfenster mit zentralem Handler
         with LogBlock(logger, logging.INFO) as log:
             main_window = DHLLabelGenerator()
             main_window.setWindowIcon(QIcon(":/icons/icon.ico"))
-            
-            # Setze die geladenen Credentials direkt
+
+            # Credentials laden
+            log.section("DHL API")
+            dhl_api_username, dhl_api_password = kp_handler.get_credentials("DHL API Zugangsdaten")
+            log("DHL API Zugangsdaten geladen")
             main_window.username = dhl_api_username
             main_window.password = dhl_api_password
+
+            log.section("DHL Client")
+            client_id, client_secret = kp_handler.get_credentials("DHL Client Credentials")
+            log("DHL Client Credentials geladen")
             main_window.client_id = client_id
             main_window.client_secret = client_secret
+
+            log.section("Zendesk")
+            zendesk_email, zendesk_token = kp_handler.get_credentials("Zendesk API Token")
+            log("Zendesk API Zugangsdaten geladen")
             main_window.zendesk_email = zendesk_email
             main_window.zendesk_token = zendesk_token
+
+            log.section("Billbee")
+            bb_api_key = kp_handler.get_credentials("BillBee API Key")[1]
+            bb_auth = kp_handler.get_credentials("BillBee Basic Auth")
+            bb_api_user = bb_auth[0]
+            bb_api_password = bb_auth[1]
+            log("Billbee Zugangsdaten geladen")
             main_window.bb_api_key = bb_api_key
             main_window.bb_api_user = bb_api_user
             main_window.bb_api_password = bb_api_password
+
+            log.section("DHL Billing")
+            billing_number = kp_handler.get_credentials("DHL Billing")[0]
             main_window.billing_number = billing_number
-            
+            log("DHL Billing Number geladen")
+
             log("Hauptfenster wird angezeigt")
             main_window.show()
-            sys.exit(app.exec())
+            return main_window  # Kein sys.exit(), nur return main_window
+
     except Exception as e:
+        logger = setup_logger()
         logger.error(f"Fehler beim Starten der Anwendung: {str(e)}")
         show_error_message(f"Fehler beim Starten der Anwendung: {str(e)}")
-        sys.exit(1)
+        traceback.print_exc()
+        return None  # Kein sys.exit(), nur return None
 
 def start_dhl_label_tool():
     """Startet das DHL Label Tool direkt mit lokalen Modulen."""
@@ -272,13 +237,17 @@ def start_dhl_label_tool():
         import logging
         import resources
         
-        # Führe die ursprüngliche main-Funktion aus
-        main()
+        # Führe die neue main-Funktion aus (ohne sys.exit())
+        return main()
         
     except Exception as e:
         print(f"Fehler beim Starten des DHL Label Tools: {e}")
         import traceback
         traceback.print_exc()
+        return None
 
 if __name__ == "__main__":
+    # Erstelle eine QApplication wenn das Modul direkt ausgeführt wird
+    app = QApplication(sys.argv)
     main()
+    sys.exit(app.exec())

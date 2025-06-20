@@ -24,16 +24,20 @@ from PyQt6.QtWidgets import (
 
 from loguru import logger
 
+# Import the credential cache
+from shared.credentials.credential_cache import get_credential_cache, CredentialType
+from shared.credentials.keepass_handler import CentralKeePassHandler
+
 
 class LoginDialog(QDialog):
     """Dialog für die Benutzeranmeldung.
     
-    Dieser Dialog ermöglicht die Eingabe von Initialen und Passwort
-    mit zusätzlichen Sicherheitsfunktionen wie Passwort-Sichtbarkeit.
+    Dieser Dialog verwendet das zentrale Credential-Caching-System
+    und zeigt nur eine Bestätigung an, wenn die Credentials verfügbar sind.
     
     Attributes:
-        initials (Optional[str]): Die eingegebenen Initialen.
-        password (Optional[str]): Das eingegebene Passwort.
+        initials (Optional[str]): Die Initialen aus den zentralen Credentials.
+        password (Optional[str]): Das Passwort aus den zentralen Credentials.
     """
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -43,9 +47,10 @@ class LoginDialog(QDialog):
             parent: Parent-Widget (optional)
         """
         super().__init__(parent)
-        self.initials: Optional[str] = None
-        self.password: Optional[str] = None
-        
+        self.credential_cache = get_credential_cache()
+        self.central_kp_handler = CentralKeePassHandler()
+        self.initials = None
+        self.password = None
         self._setup_ui()
         self._setup_connections()
         
@@ -53,94 +58,66 @@ class LoginDialog(QDialog):
         """Richtet die Benutzeroberfläche ein."""
         self.setWindowTitle("RMA Database Login")
         self.setModal(True)
-        self.setMinimumWidth(300)
+        self.setMinimumWidth(400)
+        self.setMinimumHeight(220)
         
         # Hauptlayout
-        layout = QFormLayout(self)
-        layout.setSpacing(10)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(20)
+        layout.setContentsMargins(30, 30, 30, 30)
         
-        # Initialen-Eingabe
-        self.initials_edit = QLineEdit()
-        self.initials_edit.setPlaceholderText("Ihre Initialen")
-        self.initials_edit.setFont(QFont("Segoe UI", 10))
-        self.initials_edit.setMaxLength(5)  # Maximale Länge für Initialen
-        layout.addRow("Initialen:", self.initials_edit)
+        # Initialen
+        initials_label = QLabel("Kürzel:")
+        self.initials_input = QLineEdit()
+        self.initials_input.setPlaceholderText("z.B. AB")
         
-        # Passwort-Eingabe mit Toggle-Button
-        pw_layout = QHBoxLayout()
-        pw_layout.setSpacing(5)
+        # Passwort
+        password_label = QLabel("KeePass Master-Passwort:")
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setPlaceholderText("Master-Passwort")
         
-        self.pw_edit = QLineEdit()
-        self.pw_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.pw_edit.setPlaceholderText("KeePass Master-Passwort")
-        self.pw_edit.setFont(QFont("Segoe UI", 10))
-        pw_layout.addWidget(self.pw_edit)
+        # Button
+        self.login_btn = QPushButton("Anmelden")
+        self.login_btn.setDefault(True)
+        self.login_btn.setMinimumHeight(40)
         
-        self.toggle_btn = QPushButton("👁")
-        self.toggle_btn.setCheckable(True)
-        self.toggle_btn.setToolTip("Passwort anzeigen/ausblenden")
-        self.toggle_btn.setFixedWidth(30)
-        pw_layout.addWidget(self.toggle_btn)
-        
-        layout.addRow("Passwort:", pw_layout)
-        
-        # Buttons
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
-        
-        self.ok_btn = QPushButton("Anmelden")
-        self.ok_btn.setDefault(True)
-        btn_layout.addWidget(self.ok_btn)
-        
-        self.cancel_btn = QPushButton("Abbrechen")
-        btn_layout.addWidget(self.cancel_btn)
-        
-        layout.addRow(btn_layout)
+        # Layout
+        layout.addWidget(initials_label)
+        layout.addWidget(self.initials_input)
+        layout.addWidget(password_label)
+        layout.addWidget(self.password_input)
+        layout.addWidget(self.login_btn)
         
     def _setup_connections(self) -> None:
         """Richtet die Signal-Verbindungen ein."""
-        self.toggle_btn.toggled.connect(self._toggle_password_visibility)
-        self.ok_btn.clicked.connect(self._validate_and_accept)
-        self.cancel_btn.clicked.connect(self.reject)
-        self.initials_edit.returnPressed.connect(self._validate_and_accept)
-        self.pw_edit.returnPressed.connect(self._validate_and_accept)
+        self.login_btn.clicked.connect(self._handle_login)
+        self.password_input.returnPressed.connect(self._handle_login)
+        self.initials_input.returnPressed.connect(self._handle_login)
         
-    def _toggle_password_visibility(self, checked: bool) -> None:
-        """Schaltet die Sichtbarkeit des Passworts um.
-        
-        Args:
-            checked: True wenn das Passwort sichtbar sein soll
-        """
-        self.pw_edit.setEchoMode(
-            QLineEdit.EchoMode.Normal if checked 
-            else QLineEdit.EchoMode.Password
+    def _handle_login(self) -> None:
+        """Handelt die Anmeldung ein."""
+        initials = self.initials_input.text().strip()
+        password = self.password_input.text()
+        if not initials or not password:
+            QMessageBox.warning(self, "Fehler", "Bitte Kürzel und Passwort eingeben.")
+            return
+        # Versuche KeePass zu öffnen
+        if not self.central_kp_handler.open_database(password):
+            QMessageBox.critical(self, "Fehler", "KeePass-Datenbank konnte nicht geöffnet werden.")
+            return
+        # Speichere Credentials im Handler und Cache
+        self.central_kp_handler.set_user_credentials(initials, password)
+        self.credential_cache.set_keepass_handler(self.central_kp_handler)
+        self.credential_cache.store_credential(
+            credential_type=CredentialType.USER_LOGIN,
+            username="current_user",
+            password=password,
+            metadata={"initials": initials}
         )
-        
-    def _validate_and_accept(self) -> None:
-        """Validiert die Eingaben und akzeptiert den Dialog wenn gültig."""
-        self.initials = self.initials_edit.text().strip().upper()
-        self.password = self.pw_edit.text()
-        
-        if not self.initials:
-            QMessageBox.warning(
-                self,
-                "Fehler",
-                "Bitte geben Sie Ihre Initialen ein."
-            )
-            self.initials_edit.setFocus()
-            return
-            
-        if not self.password:
-            QMessageBox.warning(
-                self,
-                "Fehler",
-                "Bitte geben Sie das KeePass Master-Passwort ein."
-            )
-            self.pw_edit.setFocus()
-            return
-            
-        logger.debug(f"Login versuch für Benutzer: {self.initials}")
-        super().accept()
+        self.initials = initials
+        self.password = password
+        self.accept()
         
     def get_credentials(self) -> Tuple[str, str]:
         """Gibt die eingegebenen Anmeldedaten zurück.
