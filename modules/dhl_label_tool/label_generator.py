@@ -14,7 +14,7 @@ from PyQt6.QtGui import QShortcut, QKeySequence
 
 from .zendesk_api import get_customer_email, update_problem_description, update_serial_number, update_order_info
 from .billbee_api import BillbeeAPI
-from shared.utils.logger import setup_logger
+from shared.utils.enhanced_logging import get_module_logger
 from .preview_window import PreviewWindow
 from .dhl_api import DHLAPI as DHL_API_CLASS
 from datetime import datetime
@@ -61,7 +61,7 @@ class DHLLabelGenerator(QMainWindow):
     def __init__(self, parent=None):
         try:
             super().__init__(parent)
-            self.logger = setup_logger()
+            self.logger = get_module_logger("LabelGenerator")
             self.logger.info("Starte Initialisierung der Anwendung")
             
             # Setze den Fenstertitel
@@ -921,20 +921,15 @@ class DHLLabelGenerator(QMainWindow):
             credentials = load_credentials(master_password)
             
             # DHL Credentials
-            self.username = credentials.get('dhl_username')
-            self.password = credentials.get('dhl_password')
-            self.client_id = credentials.get('dhl_client_id')
-            self.client_secret = credentials.get('dhl_client_secret')
-            self.billing_number = credentials.get('dhl_billing_number')
+            self.username, self.password = load_credentials("DHL API Zugangsdaten", group="DHL Label Tool")
+            self.client_id, self.client_secret = load_credentials("DHL API Zugangsdaten", group="DHL Label Tool")
+            self.billing_number = load_credentials("DHL API Zugangsdaten", group="DHL Label Tool")
             
             # Zendesk Credentials
-            self.zendesk_email = credentials.get('zendesk_email')
-            self.zendesk_token = credentials.get('zendesk_token')
+            self.zendesk_email, self.zendesk_token = load_credentials("Zendesk API Zugangsdaten", group="DHL Label Tool")
             
             # Billbee Credentials
-            self.bb_api_key = credentials.get('billbee_api_key')
-            self.bb_api_user = credentials.get('billbee_api_user')
-            self.bb_api_password = credentials.get('billbee_api_password')
+            self.bb_api_key, self.bb_api_user, self.bb_api_password = load_credentials("Billbee API Zugangsdaten", group="DHL Label Tool")
             
             self.logger.info("API-Credentials erfolgreich geladen")
             

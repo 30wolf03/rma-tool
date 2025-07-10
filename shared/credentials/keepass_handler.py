@@ -119,18 +119,14 @@ class CentralKeePassHandler:
         """
         return self._user_credentials
     
-    def get_credentials(self, entry_title: str, module: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
-        """Get credentials with priority order.
-        
-        Priority order:
-        1. Module-specific folder (e.g., "DHL-Label-Tool/")
-        2. Database folder (for database credentials)
-        3. Shared folder (for API credentials)
+    def get_credentials(self, entry_title: str, module: Optional[str] = None, group: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+        """Get credentials with priority order or from a specific group.
         
         Args:
             entry_title: Title of the credential entry
             module: Module name for module-specific credentials
-            
+            group: Name of the KeePass group/Ordner (z.B. 'shared', 'DHL Label Tool')
+        
         Returns:
             Tuple of (username, password) or (None, None) if not found
         """
@@ -139,6 +135,17 @@ class CentralKeePassHandler:
             return None, None
 
         try:
+            # Wenn explizit eine Gruppe angegeben ist, suche nur dort
+            if group:
+                group_obj = self._kp.find_groups(name=group, first=True)
+                if group_obj:
+                    for entry in group_obj.entries:
+                        if entry.title == entry_title:
+                            self.logger.info(f"Found entry '{entry_title}' in group '{group}'")
+                            return entry.username, entry.password
+                self.logger.error(f"Entry '{entry_title}' not found in group '{group}'!")
+                return None, None
+
             # Priority 1: Module-specific folder
             if module:
                 module_entry_title = f"{module}/{entry_title}"
