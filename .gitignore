@@ -74,3 +74,6 @@ Thumbs.db
 
 # Excel
 RMA Geräte Retourerfassung*
+
+# Standalone Tools (Referenz-Ordner)
+dhl-autolabel-tool-pyqt5-3/
