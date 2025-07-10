@@ -1,3 +1,4 @@
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -134,7 +135,7 @@ class LoginWindow(QDialog):
         keepass_master_password = self.keepass_master_password_input.text()
         if not keepass_master_password:
             self.logger.error("Kein Passwort eingegeben")
-            QMessageBox.warning(self, "Fehler", "Bitte Passwort eingeben.")
+            LoggingMessageBox.warning(self, "Fehler", "Bitte Passwort eingeben.")
             return
 
         if self.kp_handler.open_database(keepass_master_password):
@@ -143,8 +144,4 @@ class LoginWindow(QDialog):
             self.accept()
         else:
             self.logger.error("Fehler beim Öffnen der KeePass-Datenbank")
-            QMessageBox.critical(
-                self,
-                "Fehler",
-                "Fehler beim Öffnen der KeePass-Datenbank. Bitte das Passwort überprüfen.",
-            )
+            LoggingMessageBox.critical(self, "Fehler", "Fehler beim Öffnen der KeePass-Datenbank. Bitte das Passwort überprüfen.",)

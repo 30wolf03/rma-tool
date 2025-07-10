@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QMessageBox,
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+
     QCheckBox,
     QWidget
 )

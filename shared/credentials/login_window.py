@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
     QFrame,
     QWidget,
 )
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
 from PyQt6.QtGui import QIcon, QFont
 
@@ -241,13 +243,13 @@ class CentralLoginWindow(QDialog):
         # Validate inputs
         if not initials:
             self.logger.error("No initials entered")
-            QMessageBox.warning(self, "Fehler", "Bitte Kürzel/Initialen eingeben.")
+            LoggingMessageBox.warning(self, "Fehler", "Bitte Kürzel/Initialen eingeben.")
             self.initials_input.setFocus()
             return
             
         if not master_password:
             self.logger.error("No master password entered")
-            QMessageBox.warning(self, "Fehler", "Bitte KeePass Master-Passwort eingeben.")
+            LoggingMessageBox.warning(self, "Fehler", "Bitte KeePass Master-Passwort eingeben.")
             self.master_password_input.setFocus()
             return
 
@@ -263,11 +265,7 @@ class CentralLoginWindow(QDialog):
             self.accept()
         else:
             self.logger.error("Failed to open KeePass database")
-            QMessageBox.critical(
-                self,
-                "Fehler",
-                "Fehler beim Öffnen der KeePass-Datenbank. Bitte das Master-Passwort überprüfen.",
-            )
+            LoggingMessageBox.critical(self, "Fehler", "Fehler beim Öffnen der KeePass-Datenbank. Bitte das Master-Passwort überprüfen.",)
             self.master_password_input.setFocus()
 
     def _store_credentials_in_cache(self, initials: str, master_password: str) -> None:
