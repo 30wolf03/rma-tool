@@ -121,7 +121,7 @@ class ModuleSelector(QMainWindow):
         )
         rma_button.clicked.connect(self._start_rma_database_gui)
         button_layout.addWidget(rma_button)
-        
+
         parent_layout.addWidget(button_frame)
         
     def _create_module_button(self, title: str, description: str, icon: str) -> QPushButton:

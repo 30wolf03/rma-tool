@@ -3,13 +3,12 @@ import requests
 import json
 import time
 from typing import Dict, Any
-from modules.dhl_label_tool.utils import setup_logger
 import uuid
 from datetime import datetime
 import base64
 from .address_validator import AddressValidator
 from PyQt6.QtWidgets import QMessageBox
-from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog, get_module_logger
 
 
 
@@ -30,7 +29,7 @@ class DHLAPI:
         self.access_token = None
         self.token_expiration = 0
         self.base_url = "https://api-eu.dhl.com"
-        self.logger = setup_logger()
+        self.logger = get_module_logger("DHLAPI")
         self.token_cache_file = "dhl_token_cache.json"
         self.load_token_cache()
         self.validator = AddressValidator(self)

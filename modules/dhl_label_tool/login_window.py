@@ -12,14 +12,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
 from PyQt6.QtGui import QIcon
 import time
-from modules.dhl_label_tool.utils import setup_logger
+from shared.utils.enhanced_logging import get_module_logger
 from icons import get_eye_icon, svg_to_pixmap, create_animated_svg
 
 
 class LoginWindow(QDialog):
     def __init__(self, kp_handler, parent=None):
         super().__init__(parent)
-        self.logger = setup_logger()
+        self.logger = get_module_logger("LoginWindow")
         self.kp_handler = kp_handler
 
         self.setWindowTitle("KeePass Login")
