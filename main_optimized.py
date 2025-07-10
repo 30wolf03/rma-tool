@@ -13,6 +13,8 @@ from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QWidget, QMessageBox, QDialog, QFrame
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon, QFont, QPixmap

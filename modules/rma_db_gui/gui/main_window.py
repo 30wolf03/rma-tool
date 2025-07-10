@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QMessageBox,
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+
     QPushButton,
     QLineEdit,
     QLabel,
@@ -135,7 +137,7 @@ class TicketDetailsDialog(QDialog):
                 self.last_handler.setText(f"{row['HandlerName']} ({row['LastHandler']})" if row['HandlerName'] else row['LastHandler'] or '')
                 
         except Exception as e:
-            QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Details: {e}")
+            LoggingMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Details: {e}")
 
 class MainWindow(QMainWindow):
     """Main window for the RMA Database GUI.
@@ -155,7 +157,7 @@ class MainWindow(QMainWindow):
         # Hole zentralen Handler aus Cache
         self.central_kp_handler = self.credential_cache.get_keepass_handler()
         if not self.central_kp_handler or not self.central_kp_handler.is_database_open():
-            QMessageBox.critical(self, "Fehler", "Keine zentrale Authentifizierung gefunden. Bitte Anwendung neu starten.")
+            LoggingMessageBox.critical(self, "Fehler", "Keine zentrale Authentifizierung gefunden. Bitte Anwendung neu starten.")
             sys.exit(1)
         self._setup_ui()
         self._setup_toolbar()
@@ -410,7 +412,7 @@ class MainWindow(QMainWindow):
             title: The dialog title.
             message: The error message to display.
         """
-        QMessageBox.critical(self, title, message)
+        LoggingMessageBox.critical(self, title, message)
         self.status_bar.showMessage(f"Error: {message}", 5000)
 
     def _show_success(self, title: str, message: str) -> None:
@@ -420,7 +422,7 @@ class MainWindow(QMainWindow):
             title: The dialog title.
             message: The success message to display.
         """
-        QMessageBox.information(self, title, message)
+        LoggingMessageBox.information(self, title, message)
         self.status_bar.showMessage(message, 5000)
 
     def connect_to_database(self) -> None:
@@ -750,7 +752,7 @@ def main() -> None:
         sys.exit(app.exec())
     except Exception as e:
         logger.exception("Application failed to start")
-        QMessageBox.critical(None, "Fatal Error", f"Application failed to start: {e}")
+        LoggingMessageBox.critical(None, "Fatal Error", f"Application failed to start: {e}")
         sys.exit(1)
 
 

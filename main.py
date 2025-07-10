@@ -13,6 +13,11 @@ from typing import Optional
 from shared.credentials import CentralKeePassHandler, CentralLoginWindow
 from shared.credentials.credential_cache import initialize_credential_cache, get_credential_cache
 from shared.utils.logger import setup_logger, LogBlock
+from shared.utils.enhanced_logging import (
+    setup_enhanced_logging, 
+    LoggingMessageBox, 
+    log_error_and_show_dialog
+)
 
 # PyQt6 Imports
 from PyQt6.QtWidgets import (
@@ -223,10 +228,11 @@ class ModuleSelector(QMainWindow):
                 
             except Exception as e:
                 log(f"Authentication failed: {str(e)}")
-                QMessageBox.critical(
-                    self,
+                log_error_and_show_dialog(
+                    e,
                     "Authentifizierungsfehler",
-                    f"Fehler bei der KeePass-Authentifizierung:\n{str(e)}"
+                    f"Fehler bei der KeePass-Authentifizierung:\n{str(e)}",
+                    "Authentication"
                 )
                 return False
                 
@@ -249,17 +255,19 @@ class ModuleSelector(QMainWindow):
                 
             except ImportError as e:
                 log(f"Import error: {str(e)}")
-                QMessageBox.critical(
-                    self,
+                log_error_and_show_dialog(
+                    e,
                     "Modul-Fehler",
-                    f"Fehler beim Laden des DHL Label Tool Moduls:\n{str(e)}"
+                    f"Fehler beim Laden des DHL Label Tool Moduls:\n{str(e)}",
+                    "ModuleLoader"
                 )
             except Exception as e:
                 log(f"Module execution error: {str(e)}")
-                QMessageBox.critical(
-                    self,
+                log_error_and_show_dialog(
+                    e,
                     "Ausführungsfehler",
-                    f"Fehler beim Starten des DHL Label Tools:\n{str(e)}"
+                    f"Fehler beim Starten des DHL Label Tools:\n{str(e)}",
+                    "ModuleExecution"
                 )
                 
     def _start_rma_database_gui(self):
@@ -277,17 +285,19 @@ class ModuleSelector(QMainWindow):
                 
             except ImportError as e:
                 log(f"Import error: {str(e)}")
-                QMessageBox.critical(
-                    self,
+                log_error_and_show_dialog(
+                    e,
                     "Modul-Fehler",
-                    f"Fehler beim Laden des RMA Database GUI Moduls:\n{str(e)}"
+                    f"Fehler beim Laden des RMA Database GUI Moduls:\n{str(e)}",
+                    "ModuleLoader"
                 )
             except Exception as e:
                 log(f"Module execution error: {str(e)}")
-                QMessageBox.critical(
-                    self,
+                log_error_and_show_dialog(
+                    e,
                     "Ausführungsfehler",
-                    f"Fehler beim Starten der RMA Database GUI:\n{str(e)}"
+                    f"Fehler beim Starten der RMA Database GUI:\n{str(e)}",
+                    "ModuleExecution"
                 )
 
 
@@ -297,6 +307,10 @@ def main():
     with LogBlock(logger) as log:
         try:
             log.section("Application Initialization")
+            
+            # Enhanced logging system initialisieren
+            setup_enhanced_logging()
+            log("Enhanced logging system initialized")
             
             # QApplication erstellen
             app = QApplication(sys.argv)

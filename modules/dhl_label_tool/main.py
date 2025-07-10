@@ -1,16 +1,21 @@
 import os
 import sys
 import traceback
+import logging
 from shared.credentials.credential_cache import get_credential_cache
 from shared.credentials.keepass_handler import CentralKeePassHandler
 from modules.dhl_label_tool.label_generator import DHLLabelGenerator
+from modules.dhl_label_tool.login_window import LoginWindow
+import modules.dhl_label_tool.resources as resources
 from PyQt6.QtWidgets import QApplication, QMessageBox, QDialog
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import QFile
-from modules.dhl_label_tool.utils import setup_logger, LogBlock
-import logging
-import modules.dhl_label_tool.resources as resources
-from modules.dhl_label_tool.login_window import LoginWindow
+from shared.utils.enhanced_logging import (
+    LoggingMessageBox, 
+    log_error_and_show_dialog, 
+    get_module_logger
+)
+from shared.utils.logger import LogBlock
 
 # Optional: Importiere das LoginWindow für den Notfall-Login
 
@@ -34,7 +39,7 @@ def get_style_path():
 def start_dhl_label_tool_widget(kp_handler: CentralKeePassHandler):
     """Startet das DHL Label Tool als Widget mit bereits geöffnetem KeePass-Handler."""
     try:
-        logger = setup_logger()
+        logger = get_module_logger("DHL-Label-Tool")
         
         with LogBlock(logger, logging.INFO) as log:
             try:
@@ -132,7 +137,7 @@ def start_dhl_label_tool_widget(kp_handler: CentralKeePassHandler):
 
 def main():
     try:
-        logger = setup_logger()
+        logger = get_module_logger("DHL-Label-Tool")
         logger.info("Anwendung wird gestartet")
 
         # Verwende die bestehende QApplication statt eine neue zu erstellen
@@ -222,24 +227,10 @@ def start_dhl_label_tool():
     """Startet das DHL Label Tool direkt mit lokalen Modulen."""
     try:
         # Füge das aktuelle Verzeichnis zum Python-Pfad hinzu
-        import sys
-        import os
         current_dir = os.path.dirname(os.path.abspath(__file__))
         sys.path.insert(0, current_dir)
-        
-        # Verwende lokale Imports mit PyQt6
-        from keepass import KeePassHandler
-        from login_window import LoginWindow
-        from utils import setup_logger, LogBlock
-        from PyQt6.QtWidgets import QApplication, QMessageBox, QDialog
-        from PyQt6.QtGui import QIcon
-        from PyQt6.QtCore import QFile
-        import logging
-        import resources
-        
         # Führe die neue main-Funktion aus (ohne sys.exit())
         return main()
-        
     except Exception as e:
         print(f"Fehler beim Starten des DHL Label Tools: {e}")
         import traceback

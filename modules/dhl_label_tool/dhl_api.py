@@ -9,6 +9,8 @@ from datetime import datetime
 import base64
 from .address_validator import AddressValidator
 from PyQt6.QtWidgets import QMessageBox
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+
 
 
 class DHLAPI:

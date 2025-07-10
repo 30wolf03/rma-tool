@@ -5,6 +5,7 @@ import json
 import requests
 import sys
 import traceback
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QLineEdit, 
                             QPushButton, QFormLayout, QTextEdit, QMessageBox,
@@ -45,8 +46,7 @@ def global_exception_handler(exctype, value, tb):
     try:
         app = QApplication.instance()
         if app:
-            QMessageBox.critical(None, "Kritischer Fehler",
-                               f"Ein unerwarteter Fehler ist aufgetreten:\n\n{str(value)}\n\n"
+            LoggingMessageBox.critical(None, "Kritischer Fehler", f"Ein unerwarteter Fehler ist aufgetreten:\n\n{str(value)}\n\n"
                                f"Details wurden in {crash_log_path} gespeichert.")
     except:
         pass
@@ -221,7 +221,7 @@ class DHLLabelGenerator(QMainWindow):
 
         except Exception as e:
             self.logger.error(f"Fehler bei der Initialisierung: {str(e)}")
-            QMessageBox.critical(self, "Fehler", str(e))
+            LoggingMessageBox.critical(self, "Fehler", str(e))
 
     def toggle_preview(self):
         """Öffnet oder schließt das Vorschaufenster und aktualisiert die Inhalte bei jedem Öffnen."""
@@ -314,7 +314,7 @@ class DHLLabelGenerator(QMainWindow):
     def fetch_orders(self):
         email = self.email_input.text().strip()
         if not email:
-            QMessageBox.warning(self, "Fehler", "Bitte eine E-Mail-Adresse eingeben.")
+            LoggingMessageBox.warning(self, "Fehler", "Bitte eine E-Mail-Adresse eingeben.")
             return
 
         try:
@@ -362,15 +362,12 @@ class DHLLabelGenerator(QMainWindow):
                     lambda: self.orders_dropdown.setStyleSheet("")
                 )
             else:
-                QMessageBox.warning(self, "Fehler", "Keine Bestellungen gefunden.")
+                LoggingMessageBox.warning(self, "Fehler", "Keine Bestellungen gefunden.")
                 self.logger.info("Keine Bestellungen gefunden")
                 self.logger.info("-" * 80)
                 
         except Exception as e:
-            QMessageBox.warning(
-                self, 
-                "Fehler", 
-                f"Fehler beim Abrufen der Bestellungen: {str(e)}"
+            LoggingMessageBox.warning(self, "Fehler", f"Fehler beim Abrufen der Bestellungen: {str(e)}"
             )
 
     def on_order_selected(self, index):
@@ -394,12 +391,8 @@ class DHLLabelGenerator(QMainWindow):
                         
             # Überprüfen, ob das Land nicht Deutschland ist
             if country != "DE":
-                QMessageBox.warning(
-                    self,
-                    "Warnung",
-                    f"Die ausgewählte Bestellung stammt aus {country}. \n"
-                    "Die DHL-API unterstützt nur nationale Labels."
-                )
+                LoggingMessageBox.warning(self, "Warnung", f"Die ausgewählte Bestellung stammt aus {country}. \n"
+                    "Die DHL-API unterstützt nur nationale Labels.")
                 # Deaktivieren der Label-Erstellung
                 self.generate_button.setEnabled(False)
             else:
@@ -464,13 +457,13 @@ class DHLLabelGenerator(QMainWindow):
                     self.logger.info(f"E-Mail für Ticket {ticket_id} erfolgreich abgerufen: {email}")
                     self.logger.info("-" * 80)
                 else:
-                    QMessageBox.warning(self, "Fehler", "E-Mail-Adresse konnte nicht gefunden werden")
+                    LoggingMessageBox.warning(self, "Fehler", "E-Mail-Adresse konnte nicht gefunden werden")
             except Exception as e:
-                QMessageBox.warning(self, "Fehler", str(e))
+                LoggingMessageBox.warning(self, "Fehler", str(e))
                 self.logger.error(f"Fehler beim Abrufen der E-Mail: {str(e)}")
                 self.logger.info("-" * 80)
         else:
-            QMessageBox.warning(self, "Fehler", "Bitte eine Ticket-Nr. eingeben")
+            LoggingMessageBox.warning(self, "Fehler", "Bitte eine Ticket-Nr. eingeben")
             self.logger.info("-" * 80)
 
     def handle_email_enter(self):
@@ -484,12 +477,12 @@ class DHLLabelGenerator(QMainWindow):
 
     def get_billbee_address(self):
         if not self.bb_api_key or not self.bb_api_user or not self.bb_api_password:
-            QMessageBox.warning(self, "Fehler", "Keine gültigen Billbee-Zugangsdaten vorhanden")
+            LoggingMessageBox.warning(self, "Fehler", "Keine gültigen Billbee-Zugangsdaten vorhanden")
             return
             
         email = self.email_input.text().strip()
         if not email:
-            QMessageBox.warning(self, "Fehler", "Bitte eine E-Mail-Adresse eingeben")
+            LoggingMessageBox.warning(self, "Fehler", "Bitte eine E-Mail-Adresse eingeben")
             return
             
         try:
@@ -515,9 +508,9 @@ class DHLLabelGenerator(QMainWindow):
 
                 self.logger.info("Adressen von Billbee erfolgreich geladen. Bitte wählen Sie eine Adresse aus.")
             else:
-                QMessageBox.warning(self, "Fehler", "Keine Kundendaten gefunden")
+                LoggingMessageBox.warning(self, "Fehler", "Keine Kundendaten gefunden")
         except Exception as e:
-            QMessageBox.warning(self, "Fehler", str(e))
+            LoggingMessageBox.warning(self, "Fehler", str(e))
             self.logger.error(f"Fehler beim Laden der Adressdaten: {str(e)}")
 
     def fetch_customer_data(self) -> None:
@@ -534,7 +527,7 @@ class DHLLabelGenerator(QMainWindow):
         """
         ticket_id = self.ticket_nr_input.text().strip()
         if not ticket_id:
-            QMessageBox.warning(self, "Fehler", "Bitte eine Ticket-Nr. eingeben")
+            LoggingMessageBox.warning(self, "Fehler", "Bitte eine Ticket-Nr. eingeben")
             return
 
         # Abruf der E-Mail-Adresse über Zendesk
@@ -543,11 +536,7 @@ class DHLLabelGenerator(QMainWindow):
             self.logger.info("-" * 80)
             email = get_customer_email(ticket_id, self.zendesk_email, self.zendesk_token)
             if not email:
-                QMessageBox.warning(
-                    self, 
-                    "Fehler", 
-                    f"Keine E-Mail-Adresse zu Ticket #{ticket_id} gefunden"
-                )
+                LoggingMessageBox.warning(self, "Fehler", f"Keine E-Mail-Adresse zu Ticket #{ticket_id} gefunden")
                 self.logger.info(f"Keine E-Mail-Adresse zu Ticket {ticket_id} gefunden")
                 self.logger.info("-" * 80)
                 return
@@ -557,7 +546,7 @@ class DHLLabelGenerator(QMainWindow):
             )
             self.logger.info("-" * 80)
         except Exception as e:
-            QMessageBox.warning(self, "Fehler", f"Fehler beim Abrufen der E-Mail: {str(e)}")
+            LoggingMessageBox.warning(self, "Fehler", f"Fehler beim Abrufen der E-Mail: {str(e)}")
             self.logger.error(f"Fehler beim Abrufen der E-Mail: {str(e)}")
             self.logger.info("-" * 80)
             return
@@ -736,7 +725,7 @@ class DHLLabelGenerator(QMainWindow):
     def update_gui(self, shipment_no):
         self.log_text.append(f"Label wurde generiert. Sendungsnummer: {shipment_no}")
         #self.ref_input.setText(shipment_no)
-        #QMessageBox.information(self, "Erfolg", f"Label wurde erfolgreich generiert. Sendungsnummer: {shipment_no}")
+        #LoggingMessageBox.information(self, "Erfolg", f"Label wurde erfolgreich generiert. Sendungsnummer: {shipment_no}")
 
 
 
@@ -761,7 +750,7 @@ class DHLLabelGenerator(QMainWindow):
             
             # Validiere die Eingaben
             if not validate_inputs(input_fields):
-                QMessageBox.warning(self, "Fehler", "Bitte überprüfen Sie Ihre Eingaben")
+                LoggingMessageBox.warning(self, "Fehler", "Bitte überprüfen Sie Ihre Eingaben")
                 return
                 
             # Erstelle die Absenderdaten
@@ -779,14 +768,14 @@ class DHLLabelGenerator(QMainWindow):
             # Hole die Referenznummer
             reference = self.ref_input.text()
             if not validate_reference_number(reference):
-                QMessageBox.warning(self, "Fehler", "Die Referenznummer muss mindestens 8 Zeichen lang sein")
+                LoggingMessageBox.warning(self, "Fehler", "Die Referenznummer muss mindestens 8 Zeichen lang sein")
                 return
                 
             # Hole das Gewicht
             try:
                 weight = float(input_fields['weight'])
             except ValueError:
-                QMessageBox.warning(self, "Fehler", "Bitte geben Sie ein gültiges Gewicht ein")
+                LoggingMessageBox.warning(self, "Fehler", "Bitte geben Sie ein gültiges Gewicht ein")
                 return
                 
             # Generiere das Label
@@ -893,7 +882,7 @@ class DHLLabelGenerator(QMainWindow):
             success_message = f"Label erfolgreich erstellt!\nSendungsnummer: {shipment_no}"
             if validation_warning:
                 success_message += f"\n\n{validation_warning}"
-            QMessageBox.information(self, "Erfolg", success_message)
+            LoggingMessageBox.information(self, "Erfolg", success_message)
 
             # Lösche die Felder wenn auto clear aktiviert ist
             if self.clear_fields_checkbox.isChecked():
@@ -901,7 +890,7 @@ class DHLLabelGenerator(QMainWindow):
 
         except Exception as e:
             self.logger.error(f"Fehler bei der Label-Generierung: {str(e)}")
-            QMessageBox.critical(self, "Fehler", str(e))
+            LoggingMessageBox.critical(self, "Fehler", str(e))
 
     def on_clear_fields_changed(self, state):
         # Implementiere die Logik, wenn sich die Checkbox "Felder automatisch leeren" ändert
@@ -951,7 +940,7 @@ class DHLLabelGenerator(QMainWindow):
             
         except Exception as e:
             self.logger.error(f"Fehler beim Laden der API-Credentials: {str(e)}")
-            QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der API-Credentials: {str(e)}")
+            LoggingMessageBox.critical(self, "Fehler", f"Fehler beim Laden der API-Credentials: {str(e)}")
 
 if __name__ == '__main__':
     try:
@@ -1009,5 +998,5 @@ if __name__ == '__main__':
         
         # Zeige eine Fehlermeldung an
         if 'app' in locals():
-            QMessageBox.critical(None, "Kritischer Fehler", f"Fehler beim Starten der Anwendung:\n\n{str(e)}")
+            LoggingMessageBox.critical(None, "Kritischer Fehler", f"Fehler beim Starten der Anwendung:\n\n{str(e)}")
         sys.exit(1)

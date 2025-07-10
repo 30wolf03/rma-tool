@@ -4,6 +4,8 @@ import logging
 from typing import Optional, List
 from modules.dhl_label_tool.utils import setup_logger, LogBlock
 from PyQt6.QtWidgets import QMessageBox
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+
 
 
 class BillbeeAPI:

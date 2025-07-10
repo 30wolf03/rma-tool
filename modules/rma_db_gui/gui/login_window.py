@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QLabel,
     QMessageBox,
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+
     QWidget,
 )
 
@@ -100,11 +102,11 @@ class LoginDialog(QDialog):
         initials = self.initials_input.text().strip()
         password = self.password_input.text()
         if not initials or not password:
-            QMessageBox.warning(self, "Fehler", "Bitte Kürzel und Passwort eingeben.")
+            LoggingMessageBox.warning(self, "Fehler", "Bitte Kürzel und Passwort eingeben.")
             return
         # Versuche KeePass zu öffnen
         if not self.central_kp_handler.open_database(password):
-            QMessageBox.critical(self, "Fehler", "KeePass-Datenbank konnte nicht geöffnet werden.")
+            LoggingMessageBox.critical(self, "Fehler", "KeePass-Datenbank konnte nicht geöffnet werden.")
             return
         # Speichere Credentials im Handler und Cache
         self.central_kp_handler.set_user_credentials(initials, password)
