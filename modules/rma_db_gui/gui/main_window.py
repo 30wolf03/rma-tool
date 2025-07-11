@@ -10,9 +10,9 @@ import sys
 from typing import Optional, List
 from datetime import datetime
 
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon, QFont, QAction
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QIcon, QFont, QAction
+from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QWidget,
@@ -21,8 +21,6 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QMessageBox,
-from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
-
     QPushButton,
     QLineEdit,
     QLabel,
@@ -37,6 +35,8 @@ from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_
     QTextEdit,
     QCheckBox,
 )
+
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
 
 from loguru import logger
 

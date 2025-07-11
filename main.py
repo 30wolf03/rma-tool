@@ -18,14 +18,15 @@ from shared.utils.enhanced_logging import (
     LoggingMessageBox, 
     log_error_and_show_dialog
 )
+from shared.utils.terminal_mirror import create_terminal_mirror
 
-# PyQt6 Imports
-from PyQt6.QtWidgets import (
+# PySide6 Imports
+from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, 
     QLabel, QWidget, QMessageBox, QDialog, QFrame
 )
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon, QFont, QPixmap
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QIcon, QFont, QPixmap
 
 
 class ModuleSelector(QMainWindow):
@@ -84,6 +85,9 @@ class ModuleSelector(QMainWindow):
         
         # Status-Bereich
         self._create_status_section(main_layout)
+        
+        # Terminal-Mirror-Bereich
+        self._create_terminal_mirror_section(main_layout)
         
         main_layout.addStretch()
         
@@ -169,6 +173,12 @@ class ModuleSelector(QMainWindow):
         status_layout.addWidget(self.log_status_label)
         
         parent_layout.addWidget(status_frame)
+        
+    def _create_terminal_mirror_section(self, parent_layout):
+        """Terminal-Mirror-Bereich erstellen."""
+        # Terminal-Mirror Widget erstellen
+        self.terminal_mirror = create_terminal_mirror(self)
+        parent_layout.addWidget(self.terminal_mirror)
         
     def _center_window(self):
         """Fenster zentrieren."""

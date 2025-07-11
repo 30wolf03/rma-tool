@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Optional, Any, Dict, Union
 from functools import wraps
 
-from PyQt6.QtWidgets import QMessageBox, QApplication
-from PyQt6.QtCore import QObject, pyqtSignal
+from PySide6.QtWidgets import QMessageBox, QApplication
+from PySide6.QtCore import QObject, Signal
 
 from .logger import setup_logger, LogBlock
 

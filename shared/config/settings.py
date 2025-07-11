@@ -39,7 +39,13 @@ class Settings:
                 "file_rotation": True,
                 "max_file_size": 10485760,  # 10MB
                 "max_files": 10,
-                "console_output": True
+                "console_output": True,
+                "cleanup": {
+                    "enabled": True,
+                    "max_age_days": 30,
+                    "max_files": 50,
+                    "auto_cleanup": True
+                }
             },
             "modules": {
                 "dhl_label_tool": {
@@ -151,6 +157,38 @@ class Settings:
             Dictionary mit Logging-Einstellungen
         """
         return self.get("logging", {})
+    
+    def get_log_cleanup_settings(self) -> Dict[str, Any]:
+        """Hole Log-Bereinigungseinstellungen.
+        
+        Returns:
+            Dictionary mit Log-Bereinigungseinstellungen
+        """
+        return self.get("logging.cleanup", {})
+    
+    def is_log_cleanup_enabled(self) -> bool:
+        """Prüfe ob Log-Bereinigung aktiviert ist.
+        
+        Returns:
+            True wenn Log-Bereinigung aktiviert ist
+        """
+        return self.get("logging.cleanup.enabled", True)
+    
+    def get_log_cleanup_max_age_days(self) -> int:
+        """Hole maximale Alter der Log-Dateien in Tagen.
+        
+        Returns:
+            Maximale Alter in Tagen
+        """
+        return self.get("logging.cleanup.max_age_days", 30)
+    
+    def get_log_cleanup_max_files(self) -> int:
+        """Hole maximale Anzahl der Log-Dateien.
+        
+        Returns:
+            Maximale Anzahl der Dateien
+        """
+        return self.get("logging.cleanup.max_files", 50)
 
     def get_module_settings(self, module_name: str) -> Dict[str, Any]:
         """Hole Einstellungen für ein spezifisches Modul.

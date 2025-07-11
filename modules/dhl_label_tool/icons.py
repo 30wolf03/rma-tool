@@ -1,7 +1,7 @@
-from PyQt6.QtGui import QIcon, QPixmap
-from PyQt6.QtCore import QSize, QByteArray, Qt
-from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtGui import QPainter, QImage
+from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import QSize, QByteArray, Qt
+from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtGui import QPainter, QImage
 
 def create_simple_eye_icon(is_open: bool, size: int = 20) -> QIcon:
     """Erstellt ein einfaches Auge-Icon ohne SVG."""

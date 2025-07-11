@@ -181,8 +181,8 @@ class CentralBillbeeAPI:
                     log(f"Multiple customer accounts found ({len(customers)}). All orders will be displayed.")
                     # Show popup with notice
                     if self.parent_widget:
-                        from PyQt6.QtWidgets import QMessageBox
-from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+                        from PySide6.QtWidgets import QMessageBox
+                        from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
 
                         msg = QMessageBox(self.parent_widget)
                         msg.setIcon(QMessageBox.Icon.Information)
