@@ -2,7 +2,7 @@ from typing import Dict, Any, Tuple, Optional
 import requests
 from datetime import datetime
 import uuid
-from modules.dhl_label_tool.utils import setup_logger
+from shared.utils.logger import setup_logger
 
 class AddressValidator:
     def __init__(self, dhl_api_client):
@@ -13,7 +13,7 @@ class AddressValidator:
             dhl_api_client: Eine Instanz der DHLAPI-Klasse für API-Aufrufe
         """
         self.dhl_api = dhl_api_client
-        self.logger = setup_logger()
+        self.logger = setup_logger("RMA-Tool.Shared-Infrastructure.AddressValidator")
 
     def validate_address(self, payload: Dict[str, Any]) -> Tuple[bool, Optional[str], Optional[str]]:
         """

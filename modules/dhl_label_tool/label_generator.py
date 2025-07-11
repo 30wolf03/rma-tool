@@ -6,17 +6,18 @@ import requests
 import sys
 import traceback
 from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QLineEdit, 
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QLineEdit, 
                             QPushButton, QFormLayout, QTextEdit, QMessageBox,
                             QInputDialog, QComboBox, QLabel, QHBoxLayout, QCheckBox, QDockWidget, QApplication)
-from PyQt6.QtGui import QShortcut, QKeySequence
+from PySide6.QtGui import QShortcut, QKeySequence
 
 from .zendesk_api import get_customer_email, update_problem_description, update_serial_number, update_order_info
 from .billbee_api import BillbeeAPI
-from shared.utils.enhanced_logging import get_module_logger
+from shared.utils.logger import setup_logger
 from .preview_window import PreviewWindow
 from .dhl_api import DHLAPI as DHL_API_CLASS
+from .utils import validate_inputs, validate_reference_number
 from datetime import datetime
 
 # Globaler Exception Handler
@@ -61,7 +62,7 @@ class DHLLabelGenerator(QMainWindow):
     def __init__(self, parent=None):
         try:
             super().__init__(parent)
-            self.logger = get_module_logger("LabelGenerator")
+            self.logger = setup_logger("RMA-Tool.DHL-Label-Tool.LabelGenerator")
             self.logger.info("Starte Initialisierung der Anwendung")
             
             # Setze den Fenstertitel
@@ -779,13 +780,13 @@ class DHLLabelGenerator(QMainWindow):
                 return
                 
             # Generiere das Label
-            # Zuerst Validierung durchführen
-            self.logger.info("Starte Validierung der Adressdaten...")
-            _, _, validation_warning = self.dhl_api.process_label_request(
+            # Validierung ist optional und wird nur als Warnung angezeigt
+            self.logger.info("Starte Label-Generierung...")
+            shipment_no, label_b64, validation_warning = self.dhl_api.process_label_request(
                 sender_data=sender_data,
                 reference=reference,
                 weight=weight,
-                validate=True  # Zuerst validieren
+                validate=True  # Validierung aktiviert, aber optional
             )
 
             # Wenn Validierungswarnung vorhanden, frage den Benutzer
@@ -794,26 +795,17 @@ class DHLLabelGenerator(QMainWindow):
                 msg_box = QMessageBox()
                 msg_box.setWindowTitle("Adressvalidierung")
                 msg_box.setText(f"Die Adresse konnte nicht validiert werden: {validation_warning}\n\nTrotzdem fortfahren?")
-                msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-                msg_box.button(QMessageBox.Yes).setText("Ja")
-                msg_box.button(QMessageBox.No).setText("Nein")
-                msg_box.setDefaultButton(QMessageBox.No)
-                reply = msg_box.exec_()
-                if reply == QMessageBox.No:
+                msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                msg_box.button(QMessageBox.StandardButton.Yes).setText("Ja")
+                msg_box.button(QMessageBox.StandardButton.No).setText("Nein")
+                msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+                reply = msg_box.exec()
+                if reply == QMessageBox.StandardButton.No:
                     self.logger.info("Benutzer hat die Validierung abgebrochen")
                     return
                 self.logger.info("Benutzer hat trotz Validierungswarnung fortgefahren")
             else:
                 self.logger.info("Validierung erfolgreich - keine Warnungen gefunden")
-
-            # Label generieren (entweder nach erfolgreicher Validierung oder nach Benutzerbestätigung)
-            self.logger.info("Starte Label-Generierung...")
-            shipment_no, label_b64, _ = self.dhl_api.process_label_request(
-                sender_data=sender_data,
-                reference=reference,
-                weight=weight,
-                validate=False  # Label generieren
-            )
 
             # Speichere das Label
             pdf_file = self.save_label(label_b64, self.name_input.text().strip(), reference)

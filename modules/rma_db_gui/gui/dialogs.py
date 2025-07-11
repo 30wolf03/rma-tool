@@ -8,19 +8,19 @@ from __future__ import annotations
 
 from typing import Optional, List
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QMessageBox,
-from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
-
     QCheckBox,
     QWidget
 )
+
+from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
 
 
 class DeleteConfirmationDialog(QDialog):

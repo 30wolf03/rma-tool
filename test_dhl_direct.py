@@ -3,7 +3,7 @@
 import sys
 import os
 import traceback
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 # Pfad zum Projekt hinzufügen
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

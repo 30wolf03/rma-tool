@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 from typing import Optional, Tuple
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -23,8 +23,8 @@ from PyQt6.QtWidgets import (
 )
 from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
 
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
-from PyQt6.QtGui import QIcon, QFont
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
+from PySide6.QtGui import QIcon, QFont
 
 from ..utils.logger import setup_logger
 from .credential_cache import get_credential_cache, CredentialType

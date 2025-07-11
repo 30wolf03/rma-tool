@@ -7,9 +7,9 @@ from shared.credentials.keepass_handler import CentralKeePassHandler
 from modules.dhl_label_tool.label_generator import DHLLabelGenerator
 from modules.dhl_label_tool.login_window import LoginWindow
 import modules.dhl_label_tool.resources as resources
-from PyQt6.QtWidgets import QApplication, QMessageBox, QDialog
-from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import QFile
+from PySide6.QtWidgets import QApplication, QMessageBox, QDialog
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import QFile
 from shared.utils.enhanced_logging import (
     LoggingMessageBox, 
     log_error_and_show_dialog, 

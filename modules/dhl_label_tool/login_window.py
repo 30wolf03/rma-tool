@@ -1,5 +1,5 @@
 from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QApplication
 )
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
-from PyQt6.QtGui import QIcon
+from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QRect, QSize, QTimer
+from PySide6.QtGui import QIcon
 import time
 from shared.utils.enhanced_logging import get_module_logger
 from icons import get_eye_icon, svg_to_pixmap, create_animated_svg

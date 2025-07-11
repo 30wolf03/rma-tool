@@ -5,7 +5,7 @@ import logging
 import traceback
 from io import StringIO
 from datetime import datetime
-from PyQt6.QtWidgets import QTextEdit
+from PySide6.QtWidgets import QTextEdit
 from shared.utils.logger import setup_logger, LogBlock
 
 
@@ -19,58 +19,8 @@ class BlockFormatter(logging.Formatter):
         return "\n".join(new_lines)
 
 
-def setup_logger():
-    """Richtet den Logger ein."""
-    logger = logging.getLogger("DHLLabelGenerator")
-    if not logger.hasHandlers():
-        # Bestimme das Basisverzeichnis
-        if getattr(sys, 'frozen', False):
-            # Wenn die Anwendung als ausführbare Datei läuft
-            base_dir = os.path.dirname(sys.executable)
-        else:
-            # Wenn die Anwendung im Entwicklungsmodus läuft
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # Erstelle einen Ordner für Logs, falls noch nicht vorhanden
-        log_dir = os.path.join(base_dir, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-
-        # Dateiname mit Zeitstempel
-        log_filename = f"dhllabeltool_{datetime.now().strftime('%Y%m%d_%H-%M-%S')}.log"
-        log_filepath = os.path.join(log_dir, log_filename)
-        
-        # Handler für Datei und Konsole
-        file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
-        console_handler = logging.StreamHandler(sys.stdout)
-        
-        # Formatter für beide Handler
-        formatter = BlockFormatter(datefmt='%Y-%m-%d %H:%M:%S')
-        file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
-        
-        # Handler zum Logger hinzufügen
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-        logger.setLevel(logging.DEBUG)
-        
-        # Logge den Start der Anwendung
-        with LogBlock(logger, logging.INFO) as log:
-            log("Log-Datei: " + log_filepath)
-    return logger
-
-
-_logger_initialized = False
-
-def get_logger():
-    """Gibt den Logger zurück."""
-    global _logger_initialized
-    if not _logger_initialized:
-        setup_logger()
-        _logger_initialized = True
-    return logging.getLogger("DHLLabelGenerator")
-
-
-log = get_logger()
+# Zentrale Logger-Instanz für das DHL Label Tool Modul
+log = setup_logger("RMA-Tool.DHL-Label-Tool")
 
 
 def is_valid_email(email):
@@ -163,7 +113,7 @@ class StreamRedirector(StringIO):
     def __init__(self, text_widget):
         super().__init__()
         self.text_widget = text_widget
-        self.logger = setup_logger()
+        self.logger = setup_logger("RMA-Tool.DHL-Label-Tool")
 
     def write(self, text):
         self.text_widget.append(text)
@@ -193,7 +143,7 @@ class GUIHandler(logging.Handler):
 
 def add_gui_handler(text_widget: QTextEdit):
     """Fügt einen GUI-Handler zum Logger hinzu."""
-    logger = get_logger()
+    logger = log  # Verwende die zentrale Logger-Instanz
     # Entferne existierende GUI-Handler
     for handler in logger.handlers[:]:
         if isinstance(handler, GUIHandler):

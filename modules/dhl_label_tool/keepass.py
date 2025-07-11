@@ -3,7 +3,11 @@ from pykeepass.exceptions import CredentialsError, HeaderChecksumError
 import os
 import sys
 import logging
+import re
+import traceback
+from io import StringIO
 from datetime import datetime
+from shared.utils.logger import setup_logger, LogBlock
 
 def mask_password(password: str, visible_chars: int = 5) -> str:
     """
@@ -24,57 +28,13 @@ def mask_password(password: str, visible_chars: int = 5) -> str:
         
     return password[:visible_chars] + "..."
 
-def setup_logger():
-    """Richtet den Logger ein."""
-    logger = logging.getLogger("DHLLabelGenerator")
-    if not logger.hasHandlers():
-        # Erstelle einen Ordner für Logs, falls noch nicht vorhanden
-        log_dir = "logs"
-        os.makedirs(log_dir, exist_ok=True)
-
-        # Dateiname mit Zeitstempel
-        log_filename = f"dhllabeltool_{datetime.now().strftime('%Y%m%d_%H-%M-%S')}.log"
-        log_filepath = os.path.join(log_dir, log_filename)
-
-        # Handler für Datei und Konsole
-        file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
-        console_handler = logging.StreamHandler(sys.stdout)
-
-        # Formatter für beide Handler
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
-
-        # Handler zum Logger hinzufügen
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-        logger.setLevel(logging.DEBUG)
-    return logger
-
-class LogBlock:
-    """
-    Kontextmanager zur Aggregation mehrerer Logmeldungen in einem
-    gemeinsamen Block.
-    """
-    def __init__(self, logger, level=logging.INFO):
-        self.logger = logger
-        self.level = level
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.logger.log(self.level, "-" * 80)
-
-    def __call__(self, message):
-        self.logger.log(self.level, message)
 
 class KeePassHandler:
     def __init__(self, database_path):
         """
         Initialisiert den KeePassHandler mit dem Pfad zur KeePass-Datenbank.
         """
-        self.logger = setup_logger()
+        self.logger = setup_logger("RMA-Tool.Shared-Infrastructure.KeePass")
         self.database_path = database_path
         self.kp = None
         self.logger.info(f"KeePassHandler initialisiert mit Datenbank: {database_path}")

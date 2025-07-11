@@ -5,6 +5,10 @@ import re
 import traceback
 from io import StringIO
 from datetime import datetime
+from shared.utils.logger import setup_logger, LogBlock
+
+# Zentrale Logger-Instanz für das DHL Label Tool Modul
+log = setup_logger("RMA-Tool.DHL-Label-Tool")
 
 class StreamRedirector(StringIO):
     """Leitet stdout/stderr in ein QTextEdit-Widget um."""
@@ -12,7 +16,7 @@ class StreamRedirector(StringIO):
     def __init__(self, text_widget):
         super().__init__()
         self.text_widget = text_widget
-        self.logger = setup_logger()
+        self.logger = log
 
     def write(self, text):
         self.text_widget.append(text)
@@ -31,7 +35,7 @@ def save_label_to_file(label_data, filename):
             f.write(label_data)
         return True
     except Exception as e:
-        print(f"Fehler beim Speichern des Labels: {e}")
+        log.error(f"Fehler beim Speichern des Labels: {e}")
         return False
 
 class BlockFormatter(logging.Formatter):
@@ -66,56 +70,28 @@ class LogBlock:
     def __call__(self, message):
         self.logger.log(self.level, message)
 
-def setup_logger():
-    """Richtet den Logger ein."""
-    logger = logging.getLogger("DHLLabelGenerator")
-    if not logger.hasHandlers():
-        # Erstelle einen Ordner für Logs, falls noch nicht vorhanden
-        log_dir = "logs"
-        os.makedirs(log_dir, exist_ok=True)
-
-        # Dateiname mit Zeitstempel
-        log_filename = f"dhllabeltool_{datetime.now().strftime('%Y%m%d_%H-%M-%S')}.log"
-        log_filepath = os.path.join(log_dir, log_filename)
-
-        # Handler für Datei und Konsole
-        file_handler = logging.FileHandler(log_filepath)
-        console_handler = logging.StreamHandler(sys.stdout)
-
-        # Formatter für beide Handler
-        formatter = BlockFormatter(datefmt='%Y-%m-%d %H:%M:%S')
-        file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
-
-        # Handler zum Logger hinzufügen
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-        logger.setLevel(logging.DEBUG)
-    return logger
-
 def validate_inputs(input_fields):
     """Validiert die Eingabefelder."""
-    logger = logging.getLogger("DHLLabelGenerator")
     if not is_valid_email(input_fields.get('email', '')):
-        logger.error("Ungültige E-Mail-Adresse")
+        log.error("Ungültige E-Mail-Adresse")
         return False
 
     try:
         weight = float(input_fields.get('weight', '0'))
         if weight <= 0:
-            logger.error("Ungültiges Gewicht")
+            log.error("Ungültiges Gewicht")
             return False
     except ValueError:
-        logger.error("Gewicht muss eine Zahl sein")
+        log.error("Gewicht muss eine Zahl sein")
         return False
 
     required_fields = ['name', 'street', 'city', 'postal_code']
     for field in required_fields:
         if not input_fields.get(field, '').strip():
-            logger.error(f"Feld {field} darf nicht leer sein")
+            log.error(f"Feld {field} darf nicht leer sein")
             return False
 
-    logger.info("Alle Eingaben sind gültig")
+    log.info("Alle Eingaben sind gültig")
     return True
 
 def is_valid_email(email):
@@ -136,12 +112,12 @@ def clear_all_fields(window):
         if hasattr(window, field):
             getattr(window, field).clear()
         else:
-            logging.getLogger("DHLLabelGenerator").warning(f"Feld {field} nicht gefunden")
+            log.warning(f"Feld {field} nicht gefunden")
 
     if hasattr(window, 'type_dropdown'):
         window.type_dropdown.setCurrentIndex(0)
     else:
-        logging.getLogger("DHLLabelGenerator").warning("type_dropdown nicht gefunden")
+        log.warning("type_dropdown nicht gefunden")
 
     window.log_text.append("Alle Felder wurden geleert")
-    logging.getLogger("DHLLabelGenerator").info("Alle Felder wurden geleert")
+    log.info("Alle Felder wurden geleert")

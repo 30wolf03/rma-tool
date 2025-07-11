@@ -2,7 +2,7 @@ import requests
 import json
 import logging
 from typing import Optional, List
-from PyQt6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox
 from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog, get_module_logger
 from shared.utils.logger import LogBlock
 
