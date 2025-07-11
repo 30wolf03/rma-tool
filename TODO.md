@@ -1,4 +1,4 @@
-# 📋 To-Do Liste
+# To-Do Liste
 
 ## Backlog
 - [ ] **multiuser logins** _(Low)_
