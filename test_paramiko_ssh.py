@@ -4,8 +4,8 @@ import os
 from pykeepass import PyKeePass
 import tempfile
 
-HOST = "testserver.ilockit.bike"
-PORT = 345
+# HOST = "testserver.ilockit.bike"  # Entfernt - wird jetzt aus KeePass gelesen
+# PORT = 345                       # Entfernt - wird jetzt aus KeePass gelesen
 # USER = "haveltec"  # Entfernt - wird jetzt aus KeePass gelesen
 
 # KeePass-Datenbank abfragen
@@ -28,12 +28,31 @@ if not entry:
     print("Kein Eintrag mit Titel 'SSH' gefunden.")
     exit(1)
 
-# Benutzername, Passwort und Key extrahieren
+# Benutzername, Passwort und Verbindungsinfo extrahieren
 ssh_username = entry.username
 ssh_password = entry.password
+ssh_url = entry.url
 
 if not ssh_username:
     print("Kein Benutzername im SSH-Eintrag gefunden.")
+    exit(1)
+
+if not ssh_url:
+    print("Keine URL im SSH-Eintrag gefunden.")
+    exit(1)
+
+# Extrahiere Hostname und Port aus der URL (z.B. "testserver.ilockit.bike:345")
+try:
+    if ':' in ssh_url:
+        hostname, port_str = ssh_url.split(':', 1)
+        port = int(port_str)
+    else:
+        hostname = ssh_url
+        port = 22  # Standard SSH Port
+    
+    print(f"Verwende Host: {hostname}, Port: {port}")
+except ValueError as e:
+    print(f"Fehler beim Parsen der URL '{ssh_url}': {e}")
     exit(1)
 
 key_attachment = None
@@ -65,10 +84,10 @@ client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
 try:
-    print(f"Verbinde zu {ssh_username}@{HOST}:{PORT} ...")
+    print(f"Verbinde zu {ssh_username}@{hostname}:{port} ...")
     client.connect(
-        hostname=HOST,
-        port=PORT,
+        hostname=hostname,
+        port=port,
         username=ssh_username,
         pkey=key,
         timeout=10
