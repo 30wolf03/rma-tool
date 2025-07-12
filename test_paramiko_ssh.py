@@ -6,7 +6,7 @@ import tempfile
 
 HOST = "testserver.ilockit.bike"
 PORT = 345
-USER = "haveltec"
+# USER = "haveltec"  # Entfernt - wird jetzt aus KeePass gelesen
 
 # KeePass-Datenbank abfragen
 kdbx_path = "modules/rma-db-gui/credentials.kdbx"
@@ -28,8 +28,14 @@ if not entry:
     print("Kein Eintrag mit Titel 'SSH' gefunden.")
     exit(1)
 
-# Passwort und Key extrahieren
+# Benutzername, Passwort und Key extrahieren
+ssh_username = entry.username
 ssh_password = entry.password
+
+if not ssh_username:
+    print("Kein Benutzername im SSH-Eintrag gefunden.")
+    exit(1)
+
 key_attachment = None
 for att in entry.attachments:
     if att.filename == "traccar.key":
@@ -59,11 +65,11 @@ client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
 try:
-    print(f"Verbinde zu {USER}@{HOST}:{PORT} ...")
+    print(f"Verbinde zu {ssh_username}@{HOST}:{PORT} ...")
     client.connect(
         hostname=HOST,
         port=PORT,
-        username=USER,
+        username=ssh_username,
         pkey=key,
         timeout=10
     )
