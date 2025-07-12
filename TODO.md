@@ -13,6 +13,7 @@
 ## Open
 - [ ] **label_generator.py refactor/aufteilen** _(Low)_
 - [ ] **dhl label tool styling fix** _(Low)_
+- [ ] **gitguardian prüfung aktualisieren** _(Low)_
 
 ## Erledigt (Resolved)
 - [x] **dhl label tool: label generieren ermöglichen** _(High)_
