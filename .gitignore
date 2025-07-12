@@ -32,6 +32,10 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+logs/
+modules/dhl_label_tool/logs/
+Labels/
+modules/dhl_label_tool/Labels/
 
 # Umgebungsvariablen
 .env
