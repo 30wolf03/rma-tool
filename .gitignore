@@ -85,3 +85,9 @@ CODE_OPTIMIZATION_REPORT.md
 
 # Standalone Tools (Referenz-Ordner)
 dhl-autolabel-tool-pyqt5-3/
+
+# Test-Dateien
+test_*.py
+debug_*.py
+demo_*.py
+inspect_*.py

@@ -51,6 +51,7 @@ from ..database.connection import DatabaseConnection, DatabaseConnectionError
 from ..utils.keepass_handler import KeepassHandler, KeepassError
 from .dialogs import DeleteConfirmationDialog
 from .login_window import LoginDialog
+from .entry_dialog import EntryDialog
 
 # Import the credential cache
 from shared.credentials.credential_cache import get_credential_cache
@@ -65,79 +66,7 @@ logger.add(sys.stderr, level=LOG_LEVEL, format=LOG_FORMAT)
 # Log in die Datei
 logger.add(str(get_log_file()), level=LOG_LEVEL, format=LOG_FORMAT, encoding="utf-8")
 
-class TicketDetailsDialog(QDialog):
-    """Dialog zur Anzeige der Ticket-Details."""
-    
-    def __init__(self, parent: QMainWindow, ticket_number: str, db_connection: DatabaseConnection) -> None:
-        """Initialisiert den Detail-Dialog.
-        
-        Args:
-            parent: Parent-Window
-            ticket_number: Die Ticket-Nummer
-            db_connection: Die Datenbankverbindung
-        """
-        super().__init__(parent)
-        self.ticket_number = ticket_number
-        self.db_connection = db_connection
-        self.setWindowTitle(f"Ticket Details - {ticket_number}")
-        self.setMinimumWidth(600)
-        self._setup_ui()
-        self._load_details()
-        
-    def _setup_ui(self) -> None:
-        """Richtet die Benutzeroberfläche ein."""
-        layout = QVBoxLayout(self)
-        
-        # Formular für die Details
-        form_layout = QFormLayout()
-        
-        # Allgemeine Informationen
-        self.customer_desc = QTextEdit()
-        self.customer_desc.setReadOnly(True)
-        form_layout.addRow("Kundenbeschreibung:", self.customer_desc)
-        
-        self.problem_cause = QTextEdit()
-        self.problem_cause.setReadOnly(True)
-        form_layout.addRow("Problemursache:", self.problem_cause)
-        
-        self.last_action = QLabel()
-        form_layout.addRow("Letzte Aktion:", self.last_action)
-        
-        self.last_handler = QLabel()
-        form_layout.addRow("Letzter Bearbeiter:", self.last_handler)
-        
-        layout.addLayout(form_layout)
-        
-        # Buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        button_box.rejected.connect(self.reject)
-        layout.addWidget(button_box)
-        
-    def _load_details(self) -> None:
-        """Lädt die Ticket-Details aus der Datenbank."""
-        try:
-            # Lade RepairDetails
-            results = self.db_connection.execute_query("""
-                SELECT 
-                    rd.CustomerDescription,
-                    rd.ProblemCause,
-                    rd.LastAction,
-                    rd.LastHandler,
-                    h.Name as HandlerName
-                FROM RMA_RepairDetails rd
-                LEFT JOIN Handlers h ON rd.LastHandler = h.Initials
-                WHERE rd.TicketNumber = %s
-            """, (self.ticket_number,))
-            
-            if results:
-                row = results[0]
-                self.customer_desc.setText(row['CustomerDescription'] or '')
-                self.problem_cause.setText(row['ProblemCause'] or '')
-                self.last_action.setText(row['LastAction'] or '')
-                self.last_handler.setText(f"{row['HandlerName']} ({row['LastHandler']})" if row['HandlerName'] else row['LastHandler'] or '')
-                
-        except Exception as e:
-            LoggingMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Details: {e}")
+
 
 class MainWindow(QMainWindow):
     """Main window for the RMA Database GUI.
@@ -147,25 +76,29 @@ class MainWindow(QMainWindow):
     """
 
     def __init__(self) -> None:
-        """Initialize the main window.
-        
-        Args:
-            central_kp_handler: Der zentrale KeePass-Handler mit den gespeicherten Credentials
-        """
+        """Initialize the main window."""
         super().__init__()
         self.credential_cache = get_credential_cache()
         # Hole zentralen Handler aus Cache
         self.central_kp_handler = self.credential_cache.get_keepass_handler()
         if not self.central_kp_handler or not self.central_kp_handler.is_database_open():
-            LoggingMessageBox.critical(self, "Fehler", "Keine zentrale Authentifizierung gefunden. Bitte Anwendung neu starten.")
+            LoggingMessageBox.critical(
+                self, 
+                "Fehler", 
+                "Keine zentrale Authentifizierung gefunden. Bitte Anwendung neu starten."
+            )
             sys.exit(1)
+        
+        # Papierkorb-Status
+        self.show_deleted_entries = False
+        self.current_user = "MWO"  # Wird später aus dem Login gesetzt
+        
         self._setup_ui()
         self._setup_toolbar()
         self._setup_status_bar()
         self._setup_connections()
         try:
             self.db_connection = DatabaseConnection(self.central_kp_handler)
-            self._show_success("Erfolg", "Erfolgreich mit der Datenbank verbunden!")
             self.load_rma_data()
         except Exception as e:
             self._show_error("Verbindungsfehler", str(e))
@@ -237,14 +170,14 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
 
         # Delete action
-        delete_action = QAction(
+        self.delete_action = QAction(
             self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon),
             "Löschen",
             self
         )
-        delete_action.setStatusTip("Ausgewählte RMA-Einträge löschen")
-        delete_action.triggered.connect(self._delete_selected_entries)
-        toolbar.addAction(delete_action)
+        self.delete_action.setStatusTip("Ausgewählte RMA-Einträge löschen")
+        self.delete_action.triggered.connect(self._delete_selected_entries)
+        toolbar.addAction(self.delete_action)
 
         # Refresh action
         refresh_action = QAction(
@@ -256,6 +189,16 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self.load_rma_data)
         toolbar.addAction(refresh_action)
 
+        # Neuen Eintrag erstellen
+        add_new_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder),
+            "Neuen Eintrag erstellen",
+            self
+        )
+        add_new_action.setStatusTip("Erstellt einen neuen RMA-Eintrag")
+        add_new_action.triggered.connect(self._create_new_entry)
+        toolbar.addAction(add_new_action)
+
         # Testeintrag anlegen
         add_test_action = QAction(
             self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder),
@@ -266,16 +209,61 @@ class MainWindow(QMainWindow):
         add_test_action.triggered.connect(self._add_test_entry)
         toolbar.addAction(add_test_action)
 
+        # Papierkorb-Toggle
+        self.trash_toggle_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon),
+            "Papierkorb anzeigen",
+            self
+        )
+        self.trash_toggle_action.setStatusTip("Wechselt zwischen aktiven Einträgen und Papierkorb")
+        self.trash_toggle_action.triggered.connect(self._toggle_trash_view)
+        self.trash_toggle_action.setCheckable(True)
+        toolbar.addAction(self.trash_toggle_action)
+
+        # Wiederherstellen (nur sichtbar im Papierkorb)
+        self.restore_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowUp),
+            "Wiederherstellen",
+            self
+        )
+        self.restore_action.setStatusTip("Ausgewählte Einträge aus dem Papierkorb wiederherstellen")
+        self.restore_action.triggered.connect(self._restore_selected_entries)
+        self.restore_action.setVisible(False)
+        toolbar.addAction(self.restore_action)
+
         # Context menu for table
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
+        
+        # Verbinde Tabellen-Änderungen
+        self.table.itemChanged.connect(self._on_table_item_changed)
+        
+        # Verbinde Doppelklick für Dropdown-Spalten
+        self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
 
     def _show_context_menu(self, position) -> None:
         """Zeigt das Kontextmenü für die Tabelle an."""
         menu = QMenu()
         
-        delete_action = menu.addAction("Löschen")
-        delete_action.triggered.connect(self._delete_selected_entries)
+        if self.show_deleted_entries:
+            # Im Papierkorb: Wiederherstellen anzeigen
+            restore_action = menu.addAction("Wiederherstellen")
+            restore_action.triggered.connect(self._restore_selected_entries)
+            
+            menu.addSeparator()
+            
+            # Endgültig löschen (nur für Admins oder nach Bestätigung)
+            permanent_delete_action = menu.addAction("Endgültig löschen")
+            permanent_delete_action.triggered.connect(self._permanent_delete_selected_entries)
+        else:
+            # Bei aktiven Einträgen: Bearbeiten und Löschen anzeigen
+            edit_action = menu.addAction("Bearbeiten")
+            edit_action.triggered.connect(self._edit_selected_entry)
+            
+            menu.addSeparator()
+            
+            delete_action = menu.addAction("Löschen")
+            delete_action.triggered.connect(self._delete_selected_entries)
         
         menu.exec(self.table.viewport().mapToGlobal(position))
 
@@ -456,16 +444,7 @@ class MainWindow(QMainWindow):
             logger.exception("Unexpected error during database connection")
             self._show_error("Error", f"An unexpected error occurred: {e}")
 
-    def _show_ticket_details(self, row: int, column: int) -> None:
-        """Zeigt den Detail-Dialog für das ausgewählte Ticket an."""
-        if not self.db_connection:
-            return
-            
-        ticket_item = self.table.item(row, 0)  # TicketNumber ist die erste Spalte
-        if ticket_item:
-            ticket_number = ticket_item.text()
-            dialog = TicketDetailsDialog(self, ticket_number, self.db_connection)
-            dialog.exec()
+
 
     def load_rma_data(self) -> None:
         """Load RMA data from the database and display it in the table."""
@@ -483,29 +462,56 @@ class MainWindow(QMainWindow):
             logger.info(f"Aktuelle Sortierung - Spalte: {current_sort_column}, Richtung: {current_sort_order}")
             
             # Execute query to get RMA data with storage location names and handler
-            query = """
-                SELECT 
-                    c.TicketNumber,
-                    c.OrderNumber,
-                    c.Type,
-                    c.EntryDate,
-                    c.Status,
-                    c.ExitDate,
-                    c.TrackingNumber,
-                    c.IsAmazon,
-                    s.LocationName as StorageLocation,
-                    rd.LastHandler,
-                    h.Name as HandlerName,
-                    c.IsDeleted,
-                    c.DeletedAt,
-                    c.DeletedBy
-                FROM RMA_Cases c
-                LEFT JOIN StorageLocations s ON c.StorageLocationID = s.ID
-                LEFT JOIN RMA_RepairDetails rd ON c.TicketNumber = rd.TicketNumber AND rd.IsDeleted = FALSE
-                LEFT JOIN Handlers h ON rd.LastHandler = h.Initials
-                WHERE c.IsDeleted = FALSE
-                ORDER BY c.TicketNumber DESC
-            """
+            if self.show_deleted_entries:
+                # Papierkorb-Ansicht: Zeige gelöschte Einträge
+                query = """
+                    SELECT 
+                        c.TicketNumber,
+                        c.OrderNumber,
+                        c.Type,
+                        c.EntryDate,
+                        c.Status,
+                        c.ExitDate,
+                        c.TrackingNumber,
+                        c.IsAmazon,
+                        s.LocationName as StorageLocation,
+                        rd.LastHandler,
+                        h.Name as HandlerName,
+                        c.IsDeleted,
+                        c.DeletedAt,
+                        c.DeletedBy
+                    FROM RMA_Cases c
+                    LEFT JOIN StorageLocations s ON c.StorageLocationID = s.ID
+                    LEFT JOIN RMA_RepairDetails rd ON c.TicketNumber = rd.TicketNumber AND rd.IsDeleted = TRUE
+                    LEFT JOIN Handlers h ON rd.LastHandler = h.Initials
+                    WHERE c.IsDeleted = TRUE
+                    ORDER BY c.DeletedAt DESC
+                """
+            else:
+                # Normale Ansicht: Zeige aktive Einträge
+                query = """
+                    SELECT 
+                        c.TicketNumber,
+                        c.OrderNumber,
+                        c.Type,
+                        c.EntryDate,
+                        c.Status,
+                        c.ExitDate,
+                        c.TrackingNumber,
+                        c.IsAmazon,
+                        s.LocationName as StorageLocation,
+                        rd.LastHandler,
+                        h.Name as HandlerName,
+                        c.IsDeleted,
+                        c.DeletedAt,
+                        c.DeletedBy
+                    FROM RMA_Cases c
+                    LEFT JOIN StorageLocations s ON c.StorageLocationID = s.ID
+                    LEFT JOIN RMA_RepairDetails rd ON c.TicketNumber = rd.TicketNumber AND rd.IsDeleted = FALSE
+                    LEFT JOIN Handlers h ON rd.LastHandler = h.Initials
+                    WHERE c.IsDeleted = FALSE
+                    ORDER BY c.TicketNumber DESC
+                """
             logger.info("Führe Datenbankabfrage aus")
             results = self.db_connection.execute_query(query)
             logger.info(f"Datenbankabfrage abgeschlossen - {len(results) if results else 0} Ergebnisse erhalten")
@@ -517,12 +523,21 @@ class MainWindow(QMainWindow):
                 return
 
             # Set up table
-            # Zeige nur die relevanten Spalten an
-            visible_columns = [
-                'TicketNumber', 'OrderNumber', 'Type', 'EntryDate', 
-                'Status', 'ExitDate', 'TrackingNumber', 'IsAmazon',
-                'StorageLocation', 'LastHandler'
-            ]
+            # Zeige Spalten basierend auf Ansicht
+            if self.show_deleted_entries:
+                # Papierkorb-Ansicht: Zusätzliche Spalten für gelöschte Einträge
+                visible_columns = [
+                    'TicketNumber', 'OrderNumber', 'Type', 'EntryDate', 
+                    'Status', 'ExitDate', 'TrackingNumber', 'IsAmazon',
+                    'StorageLocation', 'LastHandler', 'DeletedAt', 'DeletedBy'
+                ]
+            else:
+                # Normale Ansicht: Standard-Spalten
+                visible_columns = [
+                    'TicketNumber', 'OrderNumber', 'Type', 'EntryDate', 
+                    'Status', 'ExitDate', 'TrackingNumber', 'IsAmazon',
+                    'StorageLocation', 'LastHandler'
+                ]
             logger.info(f"Richte Tabelle ein - {len(results)} Zeilen, {len(visible_columns)} Spalten")
             self.table.setRowCount(len(results))
             self.table.setColumnCount(len(visible_columns))
@@ -532,11 +547,18 @@ class MainWindow(QMainWindow):
             for col in visible_columns:
                 if col == 'HandlerName':
                     headers.append('LastHandler')
+                elif col == 'DeletedAt':
+                    headers.append('Gelöscht am')
+                elif col == 'DeletedBy':
+                    headers.append('Gelöscht von')
                 else:
                     headers.append(col)
             self.table.setHorizontalHeaderLabels(headers)
             logger.info(f"Spaltenüberschriften gesetzt: {headers}")
 
+            # Blockiere Signale während des Füllens der Tabelle
+            self.table.blockSignals(True)
+            
             # Fill table with data
             logger.info("Fülle Tabelle mit Daten")
             for row_idx, row_data in enumerate(results):
@@ -547,6 +569,18 @@ class MainWindow(QMainWindow):
                         handler_name = row_data.get('HandlerName', '')
                         initials = row_data.get('LastHandler', '')
                         display_value = f"{handler_name} ({initials})" if handler_name else initials
+                        item = QTableWidgetItem(display_value)
+                    elif key == 'Type':
+                        # Type-Mapping: Englische Werte -> Deutsche Anzeige
+                        type_mapping = {
+                            'repair': 'Reparatur',
+                            'return': 'Widerruf',
+                            'replace': 'Ersatz',
+                            'refund': 'Rückerstattung',
+                            'other': 'Sonstiges'
+                        }
+                        value = row_data.get(key)
+                        display_value = type_mapping.get(value, value) if value else ''
                         item = QTableWidgetItem(display_value)
                     else:
                         value = row_data.get(key)
@@ -568,12 +602,30 @@ class MainWindow(QMainWindow):
                         except ValueError:
                             item.setData(Qt.ItemDataRole.DisplayRole, str(value))
                     
-                    # Erlaube Textauswahl, aber keine Bearbeitung
-                    item.setFlags(
-                        Qt.ItemFlag.ItemIsSelectable | 
-                        Qt.ItemFlag.ItemIsEnabled |
-                        Qt.ItemFlag.ItemIsEditable  # Erlaubt Textauswahl
-                    )
+                    # Erlaube Bearbeitung für bestimmte Spalten
+                    if key in ['Status', 'Type', 'StorageLocation', 'LastHandler']:
+                        # Dropdown-Spalten: Nur Auswahl erlauben
+                        item.setFlags(
+                            Qt.ItemFlag.ItemIsSelectable | 
+                            Qt.ItemFlag.ItemIsEnabled
+                        )
+                    else:
+                        # Normale Spalten: Vollständige Bearbeitung erlauben
+                        item.setFlags(
+                            Qt.ItemFlag.ItemIsSelectable | 
+                            Qt.ItemFlag.ItemIsEnabled |
+                            Qt.ItemFlag.ItemIsEditable
+                        )
+                    
+                    # Visuelle Indikatoren für gelöschte Einträge
+                    if self.show_deleted_entries:
+                        # Graue Farbe für gelöschte Einträge
+                        item.setBackground(Qt.GlobalColor.lightGray)
+                        # Durchgestrichener Text
+                        font = item.font()
+                        font.setStrikeOut(True)
+                        item.setFont(font)
+                    
                     self.table.setItem(row_idx, col_idx, item)
                     col_idx += 1
 
@@ -586,10 +638,19 @@ class MainWindow(QMainWindow):
                 self.table.sortItems(current_sort_column, current_sort_order)
                 header.setSortIndicator(current_sort_column, current_sort_order)
             
+            # Signale wieder aktivieren
+            self.table.blockSignals(False)
+            
             # Adjust column widths
             self.table.resizeColumnsToContents()
             logger.info("Spaltenbreiten angepasst")
-            self.status_bar.showMessage(f"Loaded {len(results)} RMA entries", 5000)
+            
+            # Status-Meldung basierend auf Ansicht
+            if self.show_deleted_entries:
+                self.status_bar.showMessage(f"Papierkorb: {len(results)} gelöschte Einträge geladen", 5000)
+            else:
+                self.status_bar.showMessage(f"Aktive Einträge: {len(results)} RMA-Einträge geladen", 5000)
+            
             logger.info(f"load_rma_data erfolgreich abgeschlossen - {len(results)} Einträge geladen")
 
         except DatabaseConnectionError as e:
@@ -630,6 +691,535 @@ class MainWindow(QMainWindow):
             self.load_rma_data()
         except Exception as e:
             self._show_error("Fehler", f"Testeintrag konnte nicht angelegt werden: {e}")
+
+    def _on_table_item_changed(self, item: QTableWidgetItem) -> None:
+        """Behandelt Änderungen in der Tabelle."""
+        if not self.db_connection or self.show_deleted_entries:
+            return
+            
+        row = item.row()
+        column = item.column()
+        new_value = item.text()
+        
+        # Hole Ticket-Nummer der Zeile
+        ticket_item = self.table.item(row, 0)  # TicketNumber ist die erste Spalte
+        if not ticket_item:
+            return
+            
+        ticket_number = ticket_item.text()
+        
+        # Bestimme welche Spalte geändert wurde
+        header = self.table.horizontalHeader()
+        column_name = header.model().headerData(column, Qt.Orientation.Horizontal)
+        
+        logger.info(f"Tabellen-Änderung: {ticket_number}, Spalte: {column_name}, Wert: {new_value}")
+        
+        try:
+            self._save_table_change(ticket_number, column_name, new_value)
+        except Exception as e:
+            logger.error(f"Fehler beim Speichern der Tabellen-Änderung: {e}")
+            self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
+            # Lade Daten neu um Änderung rückgängig zu machen
+            self.load_rma_data()
+
+    def _save_table_change(self, ticket_number: str, column_name: str, new_value: str) -> None:
+        """Speichert eine Änderung aus der Tabelle in die Datenbank."""
+        with self.db_connection.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Beginne Transaktion
+            cursor.execute("START TRANSACTION")
+            
+            try:
+                # Mapping von Spaltennamen zu Datenbankfeldern
+                column_mapping = {
+                    'OrderNumber': ('RMA_Cases', 'OrderNumber'),
+                    'Type': ('RMA_Cases', 'Type'),
+                    'EntryDate': ('RMA_Cases', 'EntryDate'),
+                    'Status': ('RMA_Cases', 'Status'),
+                    'ExitDate': ('RMA_Cases', 'ExitDate'),
+                    'TrackingNumber': ('RMA_Cases', 'TrackingNumber'),
+                    'IsAmazon': ('RMA_Cases', 'IsAmazon'),
+                    'StorageLocation': ('RMA_Cases', 'StorageLocationID'),
+                    'LastHandler': ('RMA_RepairDetails', 'LastHandler')
+                }
+                
+                if column_name not in column_mapping:
+                    logger.warning(f"Unbekannte Spalte: {column_name}")
+                    return
+                
+                table_name, field_name = column_mapping[column_name]
+                
+                # Spezielle Behandlung für verschiedene Datentypen
+                if column_name == 'IsAmazon':
+                    # Boolean-Wert
+                    bool_value = new_value.lower() in ['true', '1', 'yes', 'ja']
+                    cursor.execute(
+                        f"UPDATE {table_name} SET {field_name} = %s WHERE TicketNumber = %s",
+                        (bool_value, ticket_number)
+                    )
+                elif column_name in ['EntryDate', 'ExitDate']:
+                    # Datum-Wert
+                    if new_value and new_value.strip():
+                        try:
+                            from datetime import datetime
+                            date_value = datetime.strptime(new_value, '%Y-%m-%d').date()
+                            cursor.execute(
+                                f"UPDATE {table_name} SET {field_name} = %s WHERE TicketNumber = %s",
+                                (date_value, ticket_number)
+                            )
+                        except ValueError:
+                            logger.error(f"Ungültiges Datum: {new_value}")
+                            raise Exception(f"Ungültiges Datum: {new_value}")
+                    else:
+                        # Leeres Datum auf NULL setzen
+                        cursor.execute(
+                            f"UPDATE {table_name} SET {field_name} = NULL WHERE TicketNumber = %s",
+                            (ticket_number,)
+                        )
+                elif column_name == 'StorageLocation':
+                    # StorageLocation ID aus Namen finden
+                    if new_value:
+                        location_query = "SELECT ID FROM StorageLocations WHERE LocationName = %s"
+                        location_result = self.db_connection.execute_query(location_query, (new_value,))
+                        if location_result:
+                            location_id = location_result[0]['ID']
+                            cursor.execute(
+                                f"UPDATE {table_name} SET {field_name} = %s WHERE TicketNumber = %s",
+                                (location_id, ticket_number)
+                            )
+                        else:
+                            logger.warning(f"Lagerort nicht gefunden: {new_value}")
+                    else:
+                        cursor.execute(
+                            f"UPDATE {table_name} SET {field_name} = NULL WHERE TicketNumber = %s",
+                            (ticket_number,)
+                        )
+                elif column_name == 'LastHandler':
+                    # Handler Initials aus Namen extrahieren
+                    if new_value:
+                        # Extrahiere Initials aus "Name (Initials)" Format
+                        if '(' in new_value and ')' in new_value:
+                            initials = new_value.split('(')[1].split(')')[0]
+                        else:
+                            initials = new_value
+                        
+                        cursor.execute(
+                            f"UPDATE {table_name} SET {field_name} = %s WHERE TicketNumber = %s",
+                            (initials, ticket_number)
+                        )
+                    else:
+                        cursor.execute(
+                            f"UPDATE {table_name} SET {field_name} = NULL WHERE TicketNumber = %s",
+                            (ticket_number,)
+                        )
+                elif column_name == 'Type':
+                    # Type-Mapping: Deutsche Anzeige -> Englische Werte
+                    type_mapping = {
+                        'Reparatur': 'repair',
+                        'Widerruf': 'return',
+                        'Ersatz': 'replace',
+                        'Rückerstattung': 'refund',
+                        'Sonstiges': 'other'
+                    }
+                    
+                    # Konvertiere deutschen Namen zu englischem Wert
+                    db_value = type_mapping.get(new_value, new_value)
+                    cursor.execute(
+                        f"UPDATE {table_name} SET {field_name} = %s WHERE TicketNumber = %s",
+                        (db_value, ticket_number)
+                    )
+                else:
+                    # Standard-String-Wert
+                    cursor.execute(
+                        f"UPDATE {table_name} SET {field_name} = %s WHERE TicketNumber = %s",
+                        (new_value, ticket_number)
+                    )
+                
+                # Commit Transaktion
+                cursor.execute("COMMIT")
+                logger.info(f"Änderung gespeichert: {ticket_number}, {column_name} = {new_value}")
+                
+            except Exception as e:
+                # Bei Fehler Rollback
+                cursor.execute("ROLLBACK")
+                logger.error(f"Fehler beim Speichern - Rollback durchgeführt: {e}")
+                raise e
+
+    def _on_cell_double_clicked(self, row: int, column: int) -> None:
+        """Behandelt Doppelklick auf Tabellenzellen für Dropdowns."""
+        if self.show_deleted_entries:
+            return
+            
+        header = self.table.horizontalHeader()
+        column_name = header.model().headerData(column, Qt.Orientation.Horizontal)
+        
+        # Nur für Dropdown-Spalten
+        if column_name not in ['Status', 'Type', 'StorageLocation', 'LastHandler']:
+            return
+            
+        # Erstelle Dropdown-Dialog
+        self._show_dropdown_dialog(row, column, column_name)
+
+    def _show_dropdown_dialog(self, row: int, column: int, column_name: str) -> None:
+        """Zeigt einen Dropdown-Dialog für die ausgewählte Zelle."""
+        from PySide6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QPushButton
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"{column_name} auswählen")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(300)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Erstelle ComboBox
+        combo = QComboBox()
+        
+        # Fülle ComboBox basierend auf Spalte
+        if column_name == 'Status':
+            combo.addItems(['Open', 'In Progress', 'Completed', 'Closed'])
+        elif column_name == 'Type':
+            # Deutsche Anzeige für Type-Werte
+            type_mapping = {
+                'Reparatur': 'repair',
+                'Widerruf': 'return',
+                'Ersatz': 'replace',
+                'Rückerstattung': 'refund',
+                'Sonstiges': 'other'
+            }
+            
+            # Zeige deutsche Namen an, speichere englische Werte
+            combo.addItems(list(type_mapping.keys()))
+            
+            # Speichere Mapping für späteren Zugriff
+            combo.setProperty('type_mapping', type_mapping)
+        elif column_name == 'StorageLocation':
+            # Lade Lagerorte aus Datenbank
+            try:
+                locations_query = "SELECT LocationName FROM StorageLocations ORDER BY LocationName"
+                locations_result = self.db_connection.execute_query(locations_query)
+                if locations_result:
+                    location_names = [row['LocationName'] for row in locations_result]
+                    combo.addItems([''] + location_names)
+            except Exception as e:
+                logger.error(f"Fehler beim Laden der Lagerorte: {e}")
+        elif column_name == 'LastHandler':
+            # Lade Handler aus Datenbank
+            try:
+                handlers_query = "SELECT Name, Initials FROM Handlers ORDER BY Name"
+                handlers_result = self.db_connection.execute_query(handlers_query)
+                if handlers_result:
+                    handler_names = [f"{row['Name']} ({row['Initials']})" for row in handlers_result]
+                    combo.addItems([''] + handler_names)
+            except Exception as e:
+                logger.error(f"Fehler beim Laden der Handler: {e}")
+        
+        # Setze aktuellen Wert
+        current_item = self.table.item(row, column)
+        if current_item:
+            current_text = current_item.text()
+            index = combo.findText(current_text)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+        
+        layout.addWidget(combo)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("OK")
+        cancel_button = QPushButton("Abbrechen")
+        
+        ok_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+        
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+        
+        # Zeige Dialog
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_value = combo.currentText()
+            if new_value != current_item.text() if current_item else True:
+                # Aktualisiere Tabellenzelle
+                if not current_item:
+                    current_item = QTableWidgetItem()
+                    self.table.setItem(row, column, current_item)
+                current_item.setText(new_value)
+                
+                # Speichere in Datenbank
+                ticket_item = self.table.item(row, 0)
+                if ticket_item:
+                    ticket_number = ticket_item.text()
+                    try:
+                        self._save_table_change(ticket_number, column_name, new_value)
+                    except Exception as e:
+                        logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
+                        self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
+
+    def _create_new_entry(self) -> None:
+        """Öffnet den Dialog zum Erstellen eines neuen RMA-Eintrags."""
+        if not self.db_connection:
+            self._show_error("Fehler", "Keine Datenbankverbindung")
+            return
+            
+        if self.show_deleted_entries:
+            self._show_error("Fehler", "Neue Einträge können nur in der aktiven Ansicht erstellt werden")
+            return
+            
+        dialog = EntryDialog(
+            parent=self,
+            db_connection=self.db_connection,
+            is_edit_mode=False
+        )
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.load_rma_data()
+            self._show_success("Erfolg", "Neuer RMA-Eintrag wurde erstellt")
+
+    def _edit_selected_entry(self) -> None:
+        """Öffnet den Dialog zum Bearbeiten des ausgewählten RMA-Eintrags."""
+        if not self.db_connection:
+            self._show_error("Fehler", "Keine Datenbankverbindung")
+            return
+            
+        if self.show_deleted_entries:
+            self._show_error("Fehler", "Gelöschte Einträge können nicht bearbeitet werden")
+            return
+            
+        rma_numbers = self._get_selected_rma_numbers()
+        
+        if not rma_numbers:
+            self._show_error("Fehler", "Bitte wählen Sie einen Eintrag zum Bearbeiten aus")
+            return
+            
+        if len(rma_numbers) > 1:
+            self._show_error("Fehler", "Bitte wählen Sie nur einen Eintrag zum Bearbeiten aus")
+            return
+            
+        ticket_number = rma_numbers[0]
+        
+        dialog = EntryDialog(
+            parent=self,
+            db_connection=self.db_connection,
+            ticket_number=ticket_number,
+            is_edit_mode=True
+        )
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.load_rma_data()
+            self._show_success("Erfolg", f"RMA-Eintrag {ticket_number} wurde aktualisiert")
+
+    def _toggle_trash_view(self) -> None:
+        """Wechselt zwischen aktiven Einträgen und Papierkorb-Ansicht."""
+        self.show_deleted_entries = not self.show_deleted_entries
+        
+        # Aktualisiere Toolbar-Aktionen
+        if self.show_deleted_entries:
+            self.trash_toggle_action.setText("Aktive Einträge anzeigen")
+            self.trash_toggle_action.setStatusTip("Wechselt zurück zu aktiven Einträgen")
+            self.restore_action.setVisible(True)
+            self.delete_action.setVisible(False)  # Verstecke Löschen-Button im Papierkorb
+        else:
+            self.trash_toggle_action.setText("Papierkorb anzeigen")
+            self.trash_toggle_action.setStatusTip("Wechselt zur Papierkorb-Ansicht")
+            self.restore_action.setVisible(False)
+            self.delete_action.setVisible(True)  # Zeige Löschen-Button bei aktiven Einträgen
+        
+        # Lade Daten neu
+        self.load_rma_data()
+        
+        # Aktualisiere Status
+        status_text = "Papierkorb-Ansicht" if self.show_deleted_entries else "Aktive Einträge"
+        self.status_bar.showMessage(f"Ansicht gewechselt: {status_text}", 3000)
+
+    def _restore_selected_entries(self) -> None:
+        """Stellt die ausgewählten Einträge aus dem Papierkorb wieder her."""
+        if not self.db_connection:
+            self._show_error("Fehler", "Keine Datenbankverbindung")
+            return
+
+        rma_numbers = self._get_selected_rma_numbers()
+        logger.info(f"Wiederherstellung angefordert für {len(rma_numbers)} Einträge: {rma_numbers}")
+        
+        if not rma_numbers:
+            self._show_error("Fehler", "Bitte wählen Sie mindestens einen Eintrag aus")
+            return
+
+        # Bestätigungsdialog anzeigen
+        reply = QMessageBox.question(
+            self, 
+            "Wiederherstellung bestätigen",
+            f"Möchten Sie {len(rma_numbers)} Einträge aus dem Papierkorb wiederherstellen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            logger.info("Wiederherstellung vom Benutzer abgebrochen")
+            return
+
+        try:
+            with self.db_connection.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Beginne Transaktion
+                cursor.execute("START TRANSACTION")
+                logger.info("Datenbank-Transaktion für Wiederherstellung gestartet")
+                
+                try:
+                    # Wiederherstellung für RMA_Cases
+                    logger.info(f"Stelle RMA_Cases wieder her - {len(rma_numbers)} Einträge")
+                    cursor.execute(
+                        """
+                        UPDATE RMA_Cases 
+                        SET IsDeleted = FALSE, 
+                            DeletedAt = NULL,
+                            DeletedBy = NULL
+                        WHERE TicketNumber IN %s
+                        """,
+                        (rma_numbers,)
+                    )
+                    cases_updated = cursor.rowcount
+                    logger.info(f"RMA_Cases wiederhergestellt: {cases_updated} Zeilen betroffen")
+                    
+                    # Wiederherstellung für zugehörige Daten
+                    logger.info("Stelle RMA_RepairDetails wieder her")
+                    cursor.execute(
+                        """
+                        UPDATE RMA_RepairDetails 
+                        SET IsDeleted = FALSE,
+                            DeletedAt = NULL,
+                            DeletedBy = NULL
+                        WHERE TicketNumber IN %s
+                        """,
+                        (rma_numbers,)
+                    )
+                    repair_details_updated = cursor.rowcount
+                    logger.info(f"RMA_RepairDetails wiederhergestellt: {repair_details_updated} Zeilen betroffen")
+                    
+                    logger.info("Stelle RMA_Products wieder her")
+                    cursor.execute(
+                        """
+                        UPDATE RMA_Products 
+                        SET IsDeleted = FALSE,
+                            DeletedAt = NULL,
+                            DeletedBy = NULL
+                        WHERE TicketNumber IN %s
+                        """,
+                        (rma_numbers,)
+                    )
+                    products_updated = cursor.rowcount
+                    logger.info(f"RMA_Products wiederhergestellt: {products_updated} Zeilen betroffen")
+                    
+                    # Commit Transaktion
+                    cursor.execute("COMMIT")
+                    logger.info("Datenbank-Transaktion für Wiederherstellung erfolgreich committed")
+                    
+                    self._show_success(
+                        "Erfolg",
+                        f"{len(rma_numbers)} RMA-Einträge wurden wiederhergestellt"
+                    )
+                    
+                    # Tabelle aktualisieren
+                    logger.info("Lade RMA-Daten neu nach Wiederherstellung")
+                    self.load_rma_data()
+                    
+                except Exception as e:
+                    # Bei Fehler Rollback
+                    cursor.execute("ROLLBACK")
+                    logger.error(f"Fehler während Wiederherstellung - Rollback durchgeführt: {e}")
+                    raise e
+                    
+        except DatabaseConnectionError as e:
+            logger.error(f"Datenbankverbindungsfehler bei Wiederherstellung: {e}")
+            self._show_error("Datenbankfehler", str(e))
+        except Exception as e:
+            logger.exception("Fehler bei der Wiederherstellung der Einträge")
+            self._show_error("Fehler", f"Unerwarteter Fehler: {e}")
+
+    def _permanent_delete_selected_entries(self) -> None:
+        """Löscht die ausgewählten Einträge endgültig aus der Datenbank."""
+        if not self.db_connection:
+            self._show_error("Fehler", "Keine Datenbankverbindung")
+            return
+
+        rma_numbers = self._get_selected_rma_numbers()
+        logger.info(f"Endgültiges Löschen angefordert für {len(rma_numbers)} Einträge: {rma_numbers}")
+        
+        if not rma_numbers:
+            self._show_error("Fehler", "Bitte wählen Sie mindestens einen Eintrag aus")
+            return
+
+        # Warnung anzeigen
+        reply = QMessageBox.warning(
+            self, 
+            "Endgültiges Löschen",
+            f"ACHTUNG: Diese Aktion kann nicht rückgängig gemacht werden!\n\n"
+            f"Möchten Sie {len(rma_numbers)} Einträge endgültig löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            logger.info("Endgültiges Löschen vom Benutzer abgebrochen")
+            return
+
+        try:
+            with self.db_connection.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Beginne Transaktion
+                cursor.execute("START TRANSACTION")
+                logger.info("Datenbank-Transaktion für endgültiges Löschen gestartet")
+                
+                try:
+                    # Endgültiges Löschen für alle zugehörigen Daten
+                    logger.info("Lösche RMA_RepairDetails endgültig")
+                    cursor.execute(
+                        "DELETE FROM RMA_RepairDetails WHERE TicketNumber IN %s",
+                        (rma_numbers,)
+                    )
+                    repair_details_deleted = cursor.rowcount
+                    
+                    logger.info("Lösche RMA_Products endgültig")
+                    cursor.execute(
+                        "DELETE FROM RMA_Products WHERE TicketNumber IN %s",
+                        (rma_numbers,)
+                    )
+                    products_deleted = cursor.rowcount
+                    
+                    logger.info("Lösche RMA_Cases endgültig")
+                    cursor.execute(
+                        "DELETE FROM RMA_Cases WHERE TicketNumber IN %s",
+                        (rma_numbers,)
+                    )
+                    cases_deleted = cursor.rowcount
+                    
+                    # Commit Transaktion
+                    cursor.execute("COMMIT")
+                    logger.info("Datenbank-Transaktion für endgültiges Löschen erfolgreich committed")
+                    
+                    self._show_success(
+                        "Erfolg",
+                        f"{len(rma_numbers)} RMA-Einträge wurden endgültig gelöscht"
+                    )
+                    
+                    # Tabelle aktualisieren
+                    logger.info("Lade RMA-Daten neu nach endgültigem Löschen")
+                    self.load_rma_data()
+                    
+                except Exception as e:
+                    # Bei Fehler Rollback
+                    cursor.execute("ROLLBACK")
+                    logger.error(f"Fehler während endgültigem Löschen - Rollback durchgeführt: {e}")
+                    raise e
+                    
+        except DatabaseConnectionError as e:
+            logger.error(f"Datenbankverbindungsfehler beim endgültigen Löschen: {e}")
+            self._show_error("Datenbankfehler", str(e))
+        except Exception as e:
+            logger.exception("Fehler beim endgültigen Löschen der Einträge")
+            self._show_error("Fehler", f"Unerwarteter Fehler: {e}")
 
     def _handle_sort(self, logical_index: int) -> None:
         """Behandelt das Sortieren der Tabelle.
