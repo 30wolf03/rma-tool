@@ -142,6 +142,31 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(password_widget)
 
+        # Search section
+        search_widget = QWidget()
+        search_layout = QHBoxLayout(search_widget)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Search label
+        search_label = QLabel("Suche:")
+        search_label.setFont(QFont("Segoe UI", 10))
+        search_layout.addWidget(search_label)
+
+        # Search input
+        self.search_input = QLineEdit()
+        self.search_input.setFont(QFont("Segoe UI", 10))
+        self.search_input.setPlaceholderText("Ticket-Nummer, Auftragsnummer oder Produktname...")
+        self.search_input.textChanged.connect(self._filter_table)
+        search_layout.addWidget(self.search_input)
+
+        # Clear search button
+        clear_search_button = QPushButton("X")
+        clear_search_button.setMaximumWidth(30)
+        clear_search_button.clicked.connect(self._clear_search)
+        search_layout.addWidget(clear_search_button)
+
+        main_layout.addWidget(search_widget)
+
         # Create table
         self.table = QTableWidget()
         self.table.setFont(QFont("Segoe UI", 9))
@@ -199,6 +224,16 @@ class MainWindow(QMainWindow):
         add_new_action.triggered.connect(self._create_new_entry)
         toolbar.addAction(add_new_action)
 
+        # Eintrag bearbeiten
+        edit_action = QAction(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView),
+            "Eintrag bearbeiten",
+            self
+        )
+        edit_action.setStatusTip("Bearbeitet den ausgewählten RMA-Eintrag")
+        edit_action.triggered.connect(self._edit_selected_entry)
+        toolbar.addAction(edit_action)
+
         # Testeintrag anlegen
         add_test_action = QAction(
             self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder),
@@ -240,6 +275,9 @@ class MainWindow(QMainWindow):
         
         # Verbinde Doppelklick für Dropdown-Spalten
         self.table.cellDoubleClicked.connect(self._on_cell_double_clicked)
+        
+        # Speichere ursprüngliche Daten für Suche
+        self.original_data = []
 
     def _show_context_menu(self, position) -> None:
         """Zeigt das Kontextmenü für die Tabelle an."""
@@ -516,6 +554,9 @@ class MainWindow(QMainWindow):
             results = self.db_connection.execute_query(query)
             logger.info(f"Datenbankabfrage abgeschlossen - {len(results) if results else 0} Ergebnisse erhalten")
 
+            # Speichere ursprüngliche Daten für Suche
+            self.original_data = results.copy() if results else []
+
             if not results:
                 logger.info("Keine RMA-Daten gefunden - Tabelle wird geleert")
                 self.table.setRowCount(0)
@@ -647,9 +688,13 @@ class MainWindow(QMainWindow):
             
             # Status-Meldung basierend auf Ansicht
             if self.show_deleted_entries:
-                self.status_bar.showMessage(f"Papierkorb: {len(results)} gelöschte Einträge geladen", 5000)
+                self.status_bar.showMessage(f"Papierkorb: {len(results)} archivierte Einträge", 5000)
             else:
-                self.status_bar.showMessage(f"Aktive Einträge: {len(results)} RMA-Einträge geladen", 5000)
+                self.status_bar.showMessage(f"Aktive Einträge: {len(results)} RMA-Fälle", 5000)
+                
+            # Aktualisiere Suchfeld, falls Daten gefiltert sind
+            if hasattr(self, 'search_input') and self.search_input.text().strip():
+                self._filter_table()
             
             logger.info(f"load_rma_data erfolgreich abgeschlossen - {len(results)} Einträge geladen")
 
@@ -1220,6 +1265,134 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.exception("Fehler beim endgültigen Löschen der Einträge")
             self._show_error("Fehler", f"Unerwarteter Fehler: {e}")
+
+    def _filter_table(self) -> None:
+        """Filtert die Tabelle basierend auf der Sucheingabe."""
+        search_text = self.search_input.text().lower().strip()
+        
+        if not search_text:
+            # Zeige alle Daten an
+            self._restore_original_data()
+            return
+        
+        # Filtere die Daten
+        filtered_data = []
+        for row_data in self.original_data:
+            # Suche in Ticket-Nummer, Auftragsnummer und Produktname
+            if (search_text in row_data.get('TicketNumber', '').lower() or
+                search_text in row_data.get('OrderNumber', '').lower() or
+                search_text in row_data.get('ProductName', '').lower()):
+                filtered_data.append(row_data)
+        
+        # Aktualisiere Tabelle mit gefilterten Daten
+        self._populate_table_with_data(filtered_data)
+        
+        # Aktualisiere Status
+        self.status_bar.showMessage(f"Suche: {len(filtered_data)} von {len(self.original_data)} Einträgen gefunden", 3000)
+
+    def _clear_search(self) -> None:
+        """Löscht die Sucheingabe und zeigt alle Daten an."""
+        self.search_input.clear()
+        self._restore_original_data()
+
+    def _restore_original_data(self) -> None:
+        """Stellt die ursprünglichen Daten wieder her."""
+        if self.original_data:
+            self._populate_table_with_data(self.original_data)
+            self.status_bar.showMessage(f"Alle {len(self.original_data)} Einträge angezeigt", 3000)
+
+    def _populate_table_with_data(self, data: List[Dict[str, Any]]) -> None:
+        """Füllt die Tabelle mit den angegebenen Daten."""
+        if not data:
+            self.table.setRowCount(0)
+            return
+            
+        # Bestimme sichtbare Spalten basierend auf Ansicht
+        if self.show_deleted_entries:
+            visible_columns = [
+                'TicketNumber', 'OrderNumber', 'Type', 'EntryDate', 
+                'Status', 'ExitDate', 'TrackingNumber', 'IsAmazon',
+                'StorageLocation', 'LastHandler', 'DeletedAt', 'DeletedBy'
+            ]
+        else:
+            visible_columns = [
+                'TicketNumber', 'OrderNumber', 'Type', 'EntryDate', 
+                'Status', 'ExitDate', 'TrackingNumber', 'IsAmazon',
+                'StorageLocation', 'LastHandler'
+            ]
+        
+        self.table.setRowCount(len(data))
+        self.table.setColumnCount(len(visible_columns))
+        
+        # Setze die Spaltenüberschriften
+        headers = []
+        for col in visible_columns:
+            if col == 'HandlerName':
+                headers.append('LastHandler')
+            elif col == 'DeletedAt':
+                headers.append('Gelöscht am')
+            elif col == 'DeletedBy':
+                headers.append('Gelöscht von')
+            else:
+                headers.append(col)
+        self.table.setHorizontalHeaderLabels(headers)
+        
+        # Blockiere Signale während des Füllens der Tabelle
+        self.table.blockSignals(True)
+        
+        for row_idx, row_data in enumerate(data):
+            col_idx = 0
+            for key in visible_columns:
+                if key == 'HandlerName':
+                    # Kombiniere Name und Initials für LastHandler
+                    handler_name = row_data.get('HandlerName', '')
+                    initials = row_data.get('LastHandler', '')
+                    display_value = f"{handler_name} ({initials})" if handler_name else initials
+                    item = QTableWidgetItem(display_value)
+                elif key == 'Type':
+                    # Type-Mapping: Englische Werte -> Deutsche Anzeige
+                    type_mapping = {
+                        'repair': 'Reparatur',
+                        'return': 'Widerruf',
+                        'replace': 'Ersatz',
+                        'refund': 'Rückerstattung',
+                        'other': 'Sonstiges'
+                    }
+                    value = row_data.get(key)
+                    display_value = type_mapping.get(value, value) if value else ''
+                    item = QTableWidgetItem(display_value)
+                else:
+                    value = row_data.get(key)
+                    item = QTableWidgetItem(str(value) if value is not None else '')
+                
+                # Erlaube Bearbeitung für bestimmte Spalten
+                if key in ['Status', 'Type', 'StorageLocation', 'LastHandler']:
+                    item.setFlags(
+                        Qt.ItemFlag.ItemIsSelectable | 
+                        Qt.ItemFlag.ItemIsEnabled
+                    )
+                else:
+                    item.setFlags(
+                        Qt.ItemFlag.ItemIsSelectable | 
+                        Qt.ItemFlag.ItemIsEnabled |
+                        Qt.ItemFlag.ItemIsEditable
+                    )
+                
+                # Visuelle Indikatoren für gelöschte Einträge
+                if self.show_deleted_entries:
+                    item.setBackground(Qt.GlobalColor.lightGray)
+                    font = item.font()
+                    font.setStrikeOut(True)
+                    item.setFont(font)
+                
+                self.table.setItem(row_idx, col_idx, item)
+                col_idx += 1
+        
+        # Signale wieder aktivieren
+        self.table.blockSignals(False)
+        
+        # Spaltenbreiten anpassen
+        self.table.resizeColumnsToContents()
 
     def _handle_sort(self, logical_index: int) -> None:
         """Behandelt das Sortieren der Tabelle.
