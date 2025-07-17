@@ -5,10 +5,10 @@ import re
 import traceback
 from io import StringIO
 from datetime import datetime
-from shared.utils.logger import setup_logger, LogBlock
+from shared.utils.unified_logger import get_logger
 
-# Zentrale Logger-Instanz für das DHL Label Tool Modul
-log = setup_logger("RMA-Tool.DHL-Label-Tool")
+# Einheitliches Logging-System verwenden
+log = get_logger("DHL-Label-Tool")
 
 class StreamRedirector(StringIO):
     """Leitet stdout/stderr in ein QTextEdit-Widget um."""
@@ -16,7 +16,6 @@ class StreamRedirector(StringIO):
     def __init__(self, text_widget):
         super().__init__()
         self.text_widget = text_widget
-        self.logger = log
 
     def write(self, text):
         self.text_widget.append(text)

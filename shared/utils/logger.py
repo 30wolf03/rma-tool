@@ -94,11 +94,12 @@ def cleanup_old_logs(log_dir: Path, max_age_days: int = 30, max_files: int = 50)
         cleanup_logger.error(f"Fehler bei der Log-Bereinigung: {e}")
 
 
-def setup_logger(name: str = "RMA-Tool") -> logging.Logger:
+def setup_logger(name: str = "RMA-Tool", disable_console: bool = False) -> logging.Logger:
     """Set up a centralized logger.
     
     Args:
         name: Logger name (default: "RMA-Tool")
+        disable_console: If True, don't add console handler (for terminal mirror compatibility)
         
     Returns:
         Configured logger instance
@@ -133,18 +134,22 @@ def setup_logger(name: str = "RMA-Tool") -> logging.Logger:
 
         # File handler
         file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
-        console_handler = logging.StreamHandler(sys.stdout)
 
-        # Formatter for both handlers
+        # Formatter for handlers
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
         file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
 
-        # Add handlers to logger
+        # Add file handler
         logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
+        
+        # Console handler nur hinzufügen, wenn nicht deaktiviert
+        if not disable_console:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+        
         logger.setLevel(logging.DEBUG)
         
     return logger

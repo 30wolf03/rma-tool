@@ -1,27 +1,17 @@
 """Terminal-Spiegelung für die RMA-Tool Anwendung.
 
-Dieses Modul leitet stdout/stderr und Logging-Ausgaben in ein GUI-Widget um,
-sodass alle Ausgaben direkt in der Anwendung sichtbar sind.
+Dieses Modul leitet stdout/stderr in ein GUI-Widget um und integriert
+sich mit dem einheitlichen Logging-System.
 """
 
 import sys
-import logging
 from io import StringIO
 from typing import Optional
 from PySide6.QtWidgets import QTextEdit, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QTextCursor
 
-
-class BlockFormatter(logging.Formatter):
-    """Formatter für strukturierte Log-Ausgabe mit Einrückung."""
-    
-    def format(self, record):
-        # Füge Präfix für bessere Lesbarkeit hinzu
-        prefix = "  "
-        lines = super().format(record).split('\n')
-        new_lines = [prefix + line for line in lines]
-        return "\n".join(new_lines)
+from .unified_logger import get_logger, UnifiedLogger
 
 
 class StreamRedirector(StringIO):
@@ -31,7 +21,6 @@ class StreamRedirector(StringIO):
         super().__init__()
         self.text_widget = text_widget
         self.stream_name = stream_name
-        self.buffer = ""
 
     def write(self, text):
         if text:
@@ -41,73 +30,49 @@ class StreamRedirector(StringIO):
             else:
                 formatted_text = f"[OUT] {text}"
             
+            # Nur in das GUI schreiben, KEIN Logging!
             self.text_widget.append(formatted_text.rstrip())
-            self.buffer += text
+            self.text_widget.moveCursor(QTextCursor.MoveOperation.End)
+            self.text_widget.ensureCursorVisible()
 
     def flush(self):
-        if self.buffer:
-            self.text_widget.append(self.buffer)
-            self.buffer = ""
-
-
-class GUIHandler(logging.Handler):
-    """Handler für das Loggen in ein QTextEdit Widget."""
-    
-    def __init__(self, text_widget: QTextEdit):
-        super().__init__()
-        self.text_widget = text_widget
-        self.formatter = BlockFormatter(
-            fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-
-    def emit(self, record):
-        try:
-            msg = self.formatter.format(record)
-            self.text_widget.append(msg)
-            # Scrolle automatisch zum Ende
-            self.text_widget.verticalScrollBar().setValue(
-                self.text_widget.verticalScrollBar().maximum()
-            )
-        except Exception:
-            self.handleError(record)
+        pass
 
 
 class TerminalMirrorWidget(QWidget):
-    """Widget für die Terminal-Spiegelung mit Steuerelementen."""
+    """Widget für Terminal-Spiegelung mit Logging-Integration."""
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.stdout_redirector = None
-        self.stderr_redirector = None
-        self.gui_handler = None
+        self.mirroring_active = False
         self.original_stdout = None
         self.original_stderr = None
+        self.stdout_redirector = None
+        self.stderr_redirector = None
+        self.logger = get_logger("Terminal-Mirror")
+        
         self._setup_ui()
         
     def _setup_ui(self):
-        """Richtet die Benutzeroberfläche ein."""
+        """Benutzeroberfläche einrichten."""
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         
-        # Header mit Steuerelementen
+        # Header mit Steuerung
         header_layout = QHBoxLayout()
         
-        title_label = QLabel("Terminal-Ausgabe:")
-        title_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        # Titel
+        title_label = QLabel("Terminal-Ausgabe")
+        title_label.setStyleSheet("font-weight: bold; color: #495057;")
         header_layout.addWidget(title_label)
         
         header_layout.addStretch()
         
-        # Steuerungsbuttons
-        self.clear_button = QPushButton("Leeren")
+        # Nur noch Löschen-Button
+        self.clear_button = QPushButton("Löschen")
         self.clear_button.clicked.connect(self.clear_output)
-        self.clear_button.setFixedSize(100, 35)
+        self.clear_button.setFixedWidth(60)
         header_layout.addWidget(self.clear_button)
-        
-        self.toggle_button = QPushButton("Pause")
-        self.toggle_button.clicked.connect(self.toggle_mirroring)
-        self.toggle_button.setFixedSize(100, 35)
-        header_layout.addWidget(self.toggle_button)
         
         layout.addLayout(header_layout)
         
@@ -120,18 +85,15 @@ class TerminalMirrorWidget(QWidget):
             QTextEdit {
                 background-color: #1e1e1e;
                 color: #ffffff;
-                border: 1px solid #3c3c3c;
+                border: 1px solid #404040;
                 border-radius: 4px;
+                padding: 8px;
             }
         """)
         layout.addWidget(self.text_widget)
         
-        # Status
-        self.status_label = QLabel("Terminal-Spiegelung aktiv")
-        self.status_label.setStyleSheet("color: #4CAF50; font-size: 10px;")
-        layout.addWidget(self.status_label)
-        
-        self.mirroring_active = False
+        # Automatisch starten
+        self.start_mirroring()
         
     def start_mirroring(self):
         """Startet die Terminal-Spiegelung."""
@@ -151,21 +113,16 @@ class TerminalMirrorWidget(QWidget):
             sys.stdout = self.stdout_redirector
             sys.stderr = self.stderr_redirector
             
-            # Füge GUI-Handler zum Root-Logger hinzu
-            root_logger = logging.getLogger()
-            self.gui_handler = GUIHandler(self.text_widget)
-            self.gui_handler.setLevel(logging.INFO)
-            root_logger.addHandler(self.gui_handler)
+            # Aktiviere GUI-Ausgabe für das einheitliche Logging
+            UnifiedLogger.enable_gui_output(self.text_widget)
             
             self.mirroring_active = True
-            self.status_label.setText("Terminal-Spiegelung aktiv")
-            self.status_label.setStyleSheet("color: #4CAF50; font-size: 10px;")
-            self.toggle_button.setText("Pause")
             
-            self.text_widget.append("=== Terminal-Spiegelung gestartet ===\n")
+            self.logger.info("Terminal-Spiegelung gestartet")
+            self.text_widget.append("=== Terminal-Spiegelung aktiviert ===")
             
         except Exception as e:
-            self.text_widget.append(f"Fehler beim Starten der Terminal-Spiegelung: {e}\n")
+            self.logger.error(f"Fehler beim Starten der Terminal-Spiegelung: {e}")
             
     def stop_mirroring(self):
         """Stoppt die Terminal-Spiegelung."""
@@ -178,37 +135,27 @@ class TerminalMirrorWidget(QWidget):
                 sys.stdout = self.original_stdout
             if self.original_stderr:
                 sys.stderr = self.original_stderr
-                
-            # Entferne GUI-Handler
-            if self.gui_handler:
-                root_logger = logging.getLogger()
-                root_logger.removeHandler(self.gui_handler)
-                
-            self.mirroring_active = False
-            self.status_label.setText("Terminal-Spiegelung pausiert")
-            self.status_label.setStyleSheet("color: #FF9800; font-size: 10px;")
-            self.toggle_button.setText("Start")
             
-            self.text_widget.append("=== Terminal-Spiegelung pausiert ===\n")
+            # Deaktiviere GUI-Ausgabe
+            UnifiedLogger.disable_gui_output()
+            
+            self.mirroring_active = False
+            
+            self.logger.info("Terminal-Spiegelung gestoppt")
+            self.text_widget.append("=== Terminal-Spiegelung deaktiviert ===")
             
         except Exception as e:
-            self.text_widget.append(f"Fehler beim Stoppen der Terminal-Spiegelung: {e}\n")
-            
-    def toggle_mirroring(self):
-        """Wechselt zwischen aktiv und pausiert."""
-        if self.mirroring_active:
-            self.stop_mirroring()
-        else:
-            self.start_mirroring()
+            self.logger.error(f"Fehler beim Stoppen der Terminal-Spiegelung: {e}")
             
     def clear_output(self):
-        """Leert die Terminal-Ausgabe."""
+        """Löscht die Terminal-Ausgabe."""
         self.text_widget.clear()
-        self.text_widget.append("=== Terminal-Ausgabe geleert ===\n")
+        self.logger.info("Terminal-Ausgabe gelöscht")
         
     def closeEvent(self, event):
-        """Stoppt die Spiegelung beim Schließen."""
-        self.stop_mirroring()
+        """Beim Schließen Terminal-Spiegelung stoppen."""
+        if self.mirroring_active:
+            self.stop_mirroring()
         super().closeEvent(event)
 
 
@@ -219,8 +166,6 @@ def create_terminal_mirror(parent=None) -> TerminalMirrorWidget:
         parent: Parent-Widget
         
     Returns:
-        TerminalMirrorWidget-Instanz
+        Terminal-Mirror-Widget
     """
-    widget = TerminalMirrorWidget(parent)
-    widget.start_mirroring()
-    return widget 
+    return TerminalMirrorWidget(parent) 

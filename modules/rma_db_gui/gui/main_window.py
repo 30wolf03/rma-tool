@@ -7,7 +7,7 @@ interface for managing RMA database entries.
 from __future__ import annotations
 
 import sys
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QSize
@@ -37,16 +37,8 @@ from PySide6.QtWidgets import (
 )
 
 from shared.utils.enhanced_logging import LoggingMessageBox, log_error_and_show_dialog
+from shared.utils.unified_logger import get_logger
 
-from loguru import logger
-
-from ..config.settings import (
-    WINDOW_TITLE,
-    WINDOW_SIZE,
-    LOG_LEVEL,
-    LOG_FORMAT,
-    get_log_file,
-)
 from ..database.connection import DatabaseConnection, DatabaseConnectionError
 from ..utils.keepass_handler import KeepassHandler, KeepassError
 from .dialogs import DeleteConfirmationDialog
@@ -57,15 +49,12 @@ from .entry_dialog import EntryDialog
 from shared.credentials.credential_cache import get_credential_cache
 from shared.credentials.keepass_handler import CentralKeePassHandler
 
-# Configure logging
-logger.remove()  # Remove default handler
+# Einheitliches Logging-System verwenden
+logger = get_logger("RMA-Database-GUI")
 
-# Log in die Konsole
-logger.add(sys.stderr, level=LOG_LEVEL, format=LOG_FORMAT)
-
-# Log in die Datei
-logger.add(str(get_log_file()), level=LOG_LEVEL, format=LOG_FORMAT, encoding="utf-8")
-
+# Lokale Konstanten
+WINDOW_TITLE = "RMA Database GUI"
+WINDOW_SIZE = (800, 600)
 
 
 class MainWindow(QMainWindow):

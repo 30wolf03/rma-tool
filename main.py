@@ -12,7 +12,7 @@ from typing import Optional
 # Zentrale Infrastruktur importieren
 from shared.credentials import CentralKeePassHandler, CentralLoginWindow
 from shared.credentials.credential_cache import initialize_credential_cache, get_credential_cache
-from shared.utils.logger import setup_logger, LogBlock
+from shared.utils.unified_logger import initialize_logging, get_logger, log_block
 from shared.utils.enhanced_logging import (
     setup_enhanced_logging, 
     LoggingMessageBox, 
@@ -34,7 +34,8 @@ class ModuleSelector(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.logger = setup_logger("RMA-Tool.Main")
+        # Einheitliches Logging-System verwenden
+        self.logger = get_logger("Main")
         self.kp_handler: Optional[CentralKeePassHandler] = None
         self.credential_cache = None
         
@@ -208,7 +209,7 @@ class ModuleSelector(QMainWindow):
             
     def _authenticate(self) -> bool:
         """KeePass-Authentifizierung durchführen."""
-        with LogBlock(self.logger) as log:
+        with log_block("Authentifizierung") as log:
             try:
                 # Credential Cache initialisieren
                 self.credential_cache = initialize_credential_cache()
@@ -219,7 +220,7 @@ class ModuleSelector(QMainWindow):
                     log("Central KeePass handler initialized")
                 
                 if not self.kp_handler.is_database_open():
-                    log.section("Login Dialog")
+                    log("Login Dialog")
                     login_window = CentralLoginWindow(self.kp_handler)
                     if login_window.exec() != QDialog.DialogCode.Accepted:
                         log("Login cancelled by user")
@@ -248,9 +249,9 @@ class ModuleSelector(QMainWindow):
                 
     def _start_dhl_label_tool(self):
         """DHL Label Tool starten."""
-        with LogBlock(self.logger) as log:
+        with log_block("DHL Label Tool Start") as log:
             try:
-                log.section("Module Import")
+                log("Module Import")
                 # Importiere das DHL-Tool direkt
                 import sys
                 import os
@@ -258,7 +259,7 @@ class ModuleSelector(QMainWindow):
                 sys.path.insert(0, dhl_path)
                 from main import main as dhl_main
                 
-                log.section("Module Execution")
+                log("Module Execution")
                 # Starte das DHL-Tool direkt
                 dhl_main()
                 log("DHL Label Tool erfolgreich gestartet")
@@ -282,12 +283,12 @@ class ModuleSelector(QMainWindow):
                 
     def _start_rma_database_gui(self):
         """RMA Database GUI starten."""
-        with LogBlock(self.logger) as log:
+        with log_block("RMA Database GUI Start") as log:
             try:
-                log.section("Module Import")
+                log("Module Import")
                 from modules.rma_db_gui.gui.main_window import MainWindow
                 
-                log.section("Module Execution")
+                log("Module Execution")
                 # Starte das RMA Database GUI Modul ohne Parameter
                 rma_window = MainWindow()
                 rma_window.show()
@@ -313,11 +314,18 @@ class ModuleSelector(QMainWindow):
 
 def main():
     """Hauptfunktion der Anwendung."""
-    logger = setup_logger("RMA-Tool.Main")
-    with LogBlock(logger) as log:
+    # Einheitliches Logging-System initialisieren
+    initialize_logging(
+        log_level="INFO",
+        log_dir="logs",
+        app_name="RMA-Tool",
+        enable_console=True,
+        enable_file=True,
+        enable_gui=False  # Wird später über Terminal-Mirror aktiviert
+    )
+    
+    with log_block("Application Initialization") as log:
         try:
-            log.section("Application Initialization")
-            
             # Enhanced logging system initialisieren
             setup_enhanced_logging()
             log("Enhanced logging system initialized")
@@ -335,13 +343,13 @@ def main():
                     log("Global stylesheet loaded")
             
             # Hauptfenster erstellen und anzeigen
-            log.section("Main Window")
+            log("Main Window")
             window = ModuleSelector()
             window.show()  # Fenster anzeigen
             log("Main window displayed")
             
             # Event-Loop starten
-            log.section("Application Loop")
+            log("Application Loop")
             sys.exit(app.exec())
             
         except Exception as e:

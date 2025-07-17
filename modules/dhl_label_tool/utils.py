@@ -6,7 +6,10 @@ import traceback
 from io import StringIO
 from datetime import datetime
 from PySide6.QtWidgets import QTextEdit
-from shared.utils.logger import setup_logger, LogBlock
+from shared.utils.unified_logger import get_logger
+
+# Einheitliches Logging-System verwenden
+logger = get_logger("DHL-Label-Tool")
 
 
 class BlockFormatter(logging.Formatter):
@@ -19,10 +22,6 @@ class BlockFormatter(logging.Formatter):
         return "\n".join(new_lines)
 
 
-# Zentrale Logger-Instanz für das DHL Label Tool Modul
-log = setup_logger("RMA-Tool.DHL-Label-Tool")
-
-
 def is_valid_email(email):
     """Validiert die E-Mail-Adresse."""
     if not email:
@@ -33,9 +32,9 @@ def is_valid_email(email):
 
 def validate_inputs(input_fields):
     """Validiert die Eingabefelder."""
-    log.info("Eingaben werden validiert")
+    logger.info("Eingaben werden validiert")
     if not is_valid_email(input_fields.get('email', '')):
-        log.error("Ungültige E-Mail-Adresse")
+        logger.error("Ungültige E-Mail-Adresse")
         return False
 
     try:
@@ -51,16 +50,16 @@ def validate_inputs(input_fields):
                 input_fields['weight'] = '1000'
                 weight = 1000
     except ValueError:
-        log.error("Gewicht muss eine Zahl sein")
+        logger.error("Gewicht muss eine Zahl sein")
         return False
 
     required_fields = ['name', 'street', 'city', 'postal_code']
     for field in required_fields:
         if not input_fields.get(field, '').strip():
-            log.error(f"Feld {field} darf nicht leer sein")
+            logger.error(f"Feld {field} darf nicht leer sein")
             return False
 
-    log.info("Alle Eingaben sind gültig")
+    logger.info("Alle Eingaben sind gültig")
     return True
 
 
@@ -75,21 +74,21 @@ def clear_all_fields(window):
         if hasattr(window, field):
             getattr(window, field).clear()
         else:
-            log.warning(f"Feld {field} nicht gefunden")
+            logger.warning(f"Feld {field} nicht gefunden")
 
     if hasattr(window, 'type_dropdown'):
         window.type_dropdown.setCurrentIndex(0)
     else:
-        log.warning("type_dropdown nicht gefunden")
+        logger.warning("type_dropdown nicht gefunden")
         
     # Leere das Bestellungen-Dropdown
     if hasattr(window, "orders_dropdown"):
         window.orders_dropdown.clear()
         window.orders_dropdown.addItem("- Bitte auswählen -")
     else:
-        log.warning("orders_dropdown nicht gefunden")
+        logger.warning("orders_dropdown nicht gefunden")
 
-    log.info("Alle Felder wurden geleert")
+    logger.info("Alle Felder wurden geleert")
 
 
 def validate_reference_number(reference):
@@ -104,7 +103,7 @@ def save_label_to_file(label_data, filename):
             f.write(label_data)
         return True
     except Exception as e:
-        log.error(f"Fehler beim Speichern des Labels: {e}")
+        logger.error(f"Fehler beim Speichern des Labels: {e}")
         return False
 
 
@@ -113,7 +112,7 @@ class StreamRedirector(StringIO):
     def __init__(self, text_widget):
         super().__init__()
         self.text_widget = text_widget
-        self.logger = setup_logger("RMA-Tool.DHL-Label-Tool")
+        self.logger = get_logger("DHL-Label-Tool")
 
     def write(self, text):
         self.text_widget.append(text)
@@ -143,7 +142,7 @@ class GUIHandler(logging.Handler):
 
 def add_gui_handler(text_widget: QTextEdit):
     """Fügt einen GUI-Handler zum Logger hinzu."""
-    logger = log  # Verwende die zentrale Logger-Instanz
+    logger = get_logger("DHL-Label-Tool") # Verwende die zentrale Logger-Instanz
     # Entferne existierende GUI-Handler
     for handler in logger.handlers[:]:
         if isinstance(handler, GUIHandler):
