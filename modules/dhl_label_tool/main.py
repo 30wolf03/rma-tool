@@ -15,7 +15,7 @@ from shared.utils.enhanced_logging import (
     log_error_and_show_dialog, 
     get_module_logger
 )
-from shared.utils.logger import LogBlock
+from shared.utils.unified_logger import log_block
 
 # Optional: Importiere das LoginWindow für den Notfall-Login
 
@@ -41,9 +41,8 @@ def start_dhl_label_tool_widget(kp_handler: CentralKeePassHandler):
     try:
         logger = get_module_logger("DHL-Label-Tool")
         
-        with LogBlock(logger, logging.INFO) as log:
+        with log_block("DHL API") as log:
             try:
-                log.section("DHL API")
                 # DHL API Zugangsdaten
                 dhl_api_username, dhl_api_password = kp_handler.get_credentials("DHL API Zugangsdaten", group="DHL Label Tool")
                 log("DHL API Zugangsdaten geladen")
@@ -56,7 +55,6 @@ def start_dhl_label_tool_widget(kp_handler: CentralKeePassHandler):
                 return None
 
             try:
-                log.section("DHL Client")
                 # DHL Client Credentials
                 client_id, client_secret = kp_handler.get_credentials("DHL Client Credentials", group="DHL Label Tool")
                 log("DHL Client Credentials geladen")
@@ -69,7 +67,6 @@ def start_dhl_label_tool_widget(kp_handler: CentralKeePassHandler):
                 return None
 
             try:
-                log.section("Zendesk")
                 # Zendesk API Token
                 zendesk_email, zendesk_token = kp_handler.get_credentials("Zendesk API Token", group="shared")
                 log("Zendesk API Zugangsdaten geladen")
@@ -82,7 +79,6 @@ def start_dhl_label_tool_widget(kp_handler: CentralKeePassHandler):
                 return None
 
             try:
-                log.section("Billbee")
                 # Billbee API Key
                 bb_api_key = kp_handler.get_credentials("BillBee API Key", group="shared")[1]
                 log("Billbee API Key geladen")
@@ -104,7 +100,6 @@ def start_dhl_label_tool_widget(kp_handler: CentralKeePassHandler):
                 return None
 
             try:
-                log.section("DHL Billing")
                 # DHL Billing
                 billing_number = kp_handler.get_credentials("DHL Billing", group="DHL Label Tool")[0]
                 log("DHL Billing Number geladen")
@@ -116,7 +111,7 @@ def start_dhl_label_tool_widget(kp_handler: CentralKeePassHandler):
                 show_error_message(f"Fehler beim Laden der DHL Billing Number: {str(e)}")
                 return None
 
-        with LogBlock(logger, logging.INFO) as log:
+        with log_block("DHL Label Tool Start") as log:
             main_window = DHLLabelGenerator()
             main_window.setWindowIcon(QIcon(":/icons/icon.ico"))
             
@@ -180,33 +175,29 @@ def main():
             logger.info("Zentraler Login gefunden, nutze zentralen Handler")
 
         # Starte das Hauptfenster mit zentralem Handler
-        with LogBlock(logger, logging.INFO) as log:
+        with log_block("DHL Label Tool Start") as log:
             main_window = DHLLabelGenerator()
             main_window.setWindowIcon(QIcon(":/icons/icon.ico"))
 
             # Credentials laden
-            log.section("DHL API")
             # DHL API Zugangsdaten
             dhl_api_username, dhl_api_password = kp_handler.get_credentials("DHL API Zugangsdaten", group="DHL Label Tool")
             log("DHL API Zugangsdaten geladen")
             main_window.username = dhl_api_username
             main_window.password = dhl_api_password
 
-            log.section("DHL Client")
             # DHL Client Credentials
             client_id, client_secret = kp_handler.get_credentials("DHL Client Credentials", group="DHL Label Tool")
             log("DHL Client Credentials geladen")
             main_window.client_id = client_id
             main_window.client_secret = client_secret
 
-            log.section("Zendesk")
             # Zendesk API Token
             zendesk_email, zendesk_token = kp_handler.get_credentials("Zendesk API Token", group="shared")
             log("Zendesk API Zugangsdaten geladen")
             main_window.zendesk_email = zendesk_email
             main_window.zendesk_token = zendesk_token
 
-            log.section("Billbee")
             # Billbee API Key
             bb_api_key = kp_handler.get_credentials("BillBee API Key", group="shared")[1]
             # Billbee Basic Auth
@@ -218,7 +209,6 @@ def main():
             main_window.bb_api_user = bb_api_user
             main_window.bb_api_password = bb_api_password
 
-            log.section("DHL Billing")
             # DHL Billing
             billing_number = kp_handler.get_credentials("DHL Billing", group="DHL Label Tool")[0]
             main_window.billing_number = billing_number

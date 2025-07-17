@@ -23,10 +23,43 @@ from shared.utils.terminal_mirror import create_terminal_mirror
 # PySide6 Imports
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QLabel, QWidget, QMessageBox, QDialog, QFrame
+    QLabel, QWidget, QMessageBox, QDialog, QFrame, QGridLayout
 )
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon, QFont, QPixmap
+
+
+class LogWindow(QMainWindow):
+    """Separates Fenster für Logging-Ausgabe."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.setWindowTitle("RMA-Tool - System-Logs")
+        self.setGeometry(100, 100, 1000, 700)
+        self.setMinimumSize(800, 500)
+        
+        # Terminal-Mirror Widget erstellen und als zentrales Widget setzen
+        self.terminal_mirror = create_terminal_mirror(self)
+        self.setCentralWidget(self.terminal_mirror)
+        
+        # Fenster zentrieren
+        self._center_window()
+        
+    def _center_window(self):
+        """Fenster zentrieren."""
+        screen = QApplication.primaryScreen().geometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 2
+        self.move(x, y)
+        
+    def closeEvent(self, event):
+        """Beim Schließen nur verstecken und Parent-Button zurücksetzen."""
+        self.hide()
+        # Parent-Button zurücksetzen
+        if self.parent and hasattr(self.parent, 'log_toggle_button'):
+            self.parent.log_toggle_button.setChecked(False)
+        event.ignore()
 
 
 class ModuleSelector(QMainWindow):
@@ -38,10 +71,11 @@ class ModuleSelector(QMainWindow):
         self.logger = get_logger("Main")
         self.kp_handler: Optional[CentralKeePassHandler] = None
         self.credential_cache = None
+        self.log_window: Optional[LogWindow] = None
         
         self.setWindowTitle("RMA-Tool - Modulauswahl")
-        self.setGeometry(100, 100, 600, 700)
-        self.setMinimumSize(600, 700)
+        self.setGeometry(100, 100, 800, 500)
+        self.setMinimumSize(800, 500)
         
         # Erst authentifizieren, dann UI anzeigen
         if self._authenticate():
@@ -59,38 +93,117 @@ class ModuleSelector(QMainWindow):
         
         # Hauptlayout
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setSpacing(20)
-        main_layout.setContentsMargins(30, 30, 30, 30)
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 20, 20, 20)
         
-        # Titel
-        title_label = QLabel("RMA-Tool")
-        title_label.setProperty("class", "title")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_font = QFont()
-        title_font.setPointSize(24)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        main_layout.addWidget(title_label)
-        
-        # Untertitel
-        subtitle_label = QLabel("Wählen Sie ein Modul aus:")
-        subtitle_label.setProperty("class", "subtitle")
-        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle_font = QFont()
-        subtitle_font.setPointSize(12)
-        subtitle_label.setFont(subtitle_font)
-        main_layout.addWidget(subtitle_label)
+        # Header-Bereich mit Titel, Status-Lämpchen und Log-Toggle
+        self._create_header_section(main_layout)
         
         # Modul-Buttons
         self._create_module_buttons(main_layout)
         
-        # Status-Bereich
-        self._create_status_section(main_layout)
-        
-        # Terminal-Mirror-Bereich
-        self._create_terminal_mirror_section(main_layout)
-        
+        # Stretch für bessere Verteilung
         main_layout.addStretch()
+        
+    def _create_header_section(self, parent_layout):
+        """Header mit Titel, Status-Lämpchen und Log-Toggle erstellen."""
+        header_frame = QFrame()
+        header_frame.setFrameStyle(QFrame.Shape.StyledPanel)
+        header_frame.setStyleSheet("""
+            QFrame {
+                background-color: #ffffff;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 15px;
+            }
+        """)
+        
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(15, 15, 15, 15)
+        
+        # Titel-Bereich
+        title_layout = QVBoxLayout()
+        
+        title_label = QLabel("RMA-Tool")
+        title_label.setProperty("class", "title")
+        title_font = QFont()
+        title_font.setPointSize(20)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        title_label.setStyleSheet("color: #212529; margin-bottom: 5px;")
+        title_layout.addWidget(title_label)
+        
+        subtitle_label = QLabel("Wählen Sie ein Modul aus")
+        subtitle_label.setProperty("class", "subtitle")
+        subtitle_font = QFont()
+        subtitle_font.setPointSize(11)
+        subtitle_label.setFont(subtitle_font)
+        subtitle_label.setStyleSheet("color: #6c757d;")
+        title_layout.addWidget(subtitle_label)
+        
+        header_layout.addLayout(title_layout)
+        header_layout.addStretch()
+        
+        # Status-Lämpchen
+        self._create_status_lights(header_layout)
+        
+        # Log-Toggle Button
+        self.log_toggle_button = QPushButton("📋 Logs")
+        self.log_toggle_button.setCheckable(True)
+        self.log_toggle_button.setFixedSize(80, 30)
+        self.log_toggle_button.clicked.connect(self._toggle_log_window)
+        self.log_toggle_button.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+            QPushButton:checked {
+                background-color: #28a745;
+            }
+        """)
+        header_layout.addWidget(self.log_toggle_button)
+        
+        parent_layout.addWidget(header_frame)
+        
+    def _create_status_lights(self, parent_layout):
+        """Kleine Status-Lämpchen erstellen."""
+        status_layout = QHBoxLayout()
+        status_layout.setSpacing(8)
+        
+        # KeePass Status-Lämpchen
+        self.kp_status_light = self._create_status_light("#dc3545", "KeePass: Nicht verbunden")
+        status_layout.addWidget(self.kp_status_light)
+        
+        # Credential Cache Status-Lämpchen
+        self.cache_status_light = self._create_status_light("#dc3545", "Credential Cache: Nicht aktiv")
+        status_layout.addWidget(self.cache_status_light)
+        
+        # Log-Status-Lämpchen
+        self.log_status_light = self._create_status_light("#28a745", "Logging: Aktiv")
+        status_layout.addWidget(self.log_status_light)
+        
+        parent_layout.addLayout(status_layout)
+        
+    def _create_status_light(self, color: str, tooltip: str) -> QLabel:
+        """Ein einzelnes Status-Lämpchen erstellen."""
+        light = QLabel()
+        light.setFixedSize(12, 12)
+        light.setStyleSheet(f"""
+            QLabel {{
+                background-color: {color};
+                border-radius: 6px;
+                border: 1px solid #dee2e6;
+            }}
+        """)
+        light.setToolTip(tooltip)
+        return light
         
     def _create_module_buttons(self, parent_layout):
         """Modul-Buttons erstellen."""
@@ -106,8 +219,8 @@ class ModuleSelector(QMainWindow):
             }
         """)
         
-        button_layout = QVBoxLayout(button_frame)
-        button_layout.setSpacing(15)
+        button_layout = QHBoxLayout(button_frame)
+        button_layout.setSpacing(20)
         
         # DHL Label Tool Button
         dhl_button = self._create_module_button(
@@ -137,49 +250,17 @@ class ModuleSelector(QMainWindow):
         
         return button
         
-    def _create_status_section(self, parent_layout):
-        """Status-Bereich erstellen."""
-        status_frame = QFrame()
-        status_frame.setFrameStyle(QFrame.Shape.StyledPanel)
-        status_frame.setStyleSheet("""
-            QFrame {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 6px;
-                padding: 15px;
-            }
-        """)
-        
-        status_layout = QVBoxLayout(status_frame)
-        status_layout.setSpacing(10)
-        
-        # Status-Titel
-        status_title = QLabel("System-Status")
-        status_title.setStyleSheet("font-weight: bold; color: #495057;")
-        status_layout.addWidget(status_title)
-        
-        # KeePass-Status
-        self.kp_status_label = QLabel("🔴 KeePass: Nicht verbunden")
-        self.kp_status_label.setStyleSheet("color: #dc3545;")
-        status_layout.addWidget(self.kp_status_label)
-        
-        # Credential Cache Status
-        self.cache_status_label = QLabel("🔴 Credential Cache: Nicht aktiv")
-        self.cache_status_label.setStyleSheet("color: #dc3545;")
-        status_layout.addWidget(self.cache_status_label)
-        
-        # Log-Status
-        self.log_status_label = QLabel("🟢 Logging: Aktiv")
-        self.log_status_label.setStyleSheet("color: #28a745;")
-        status_layout.addWidget(self.log_status_label)
-        
-        parent_layout.addWidget(status_frame)
-        
-    def _create_terminal_mirror_section(self, parent_layout):
-        """Terminal-Mirror-Bereich erstellen."""
-        # Terminal-Mirror Widget erstellen
-        self.terminal_mirror = create_terminal_mirror(self)
-        parent_layout.addWidget(self.terminal_mirror)
+    def _toggle_log_window(self):
+        """Log-Fenster ein-/ausblenden."""
+        if not self.log_window:
+            self.log_window = LogWindow(self)
+            
+        if self.log_toggle_button.isChecked():
+            self.log_window.show()
+            self.log_toggle_button.setText("📋 Logs")
+        else:
+            self.log_window.hide()
+            self.log_toggle_button.setText("📋 Logs")
         
     def _center_window(self):
         """Fenster zentrieren."""
@@ -192,20 +273,54 @@ class ModuleSelector(QMainWindow):
         """Status-Anzeige aktualisieren."""
         # KeePass Status
         if self.kp_handler and self.kp_handler.is_database_open():
-            self.kp_status_label.setText("🟢 KeePass: Verbunden")
-            self.kp_status_label.setStyleSheet("color: #28a745;")
+            self.kp_status_light.setStyleSheet("""
+                QLabel {
+                    background-color: #28a745;
+                    border-radius: 6px;
+                    border: 1px solid #dee2e6;
+                }
+            """)
+            self.kp_status_light.setToolTip("KeePass: Verbunden")
         else:
-            self.kp_status_label.setText("🔴 KeePass: Nicht verbunden")
-            self.kp_status_label.setStyleSheet("color: #dc3545;")
+            self.kp_status_light.setStyleSheet("""
+                QLabel {
+                    background-color: #dc3545;
+                    border-radius: 6px;
+                    border: 1px solid #dee2e6;
+                }
+            """)
+            self.kp_status_light.setToolTip("KeePass: Nicht verbunden")
         
         # Credential Cache Status
         if self.credential_cache and self.credential_cache.has_valid_session():
             cache_stats = self.credential_cache.get_cache_stats()
-            self.cache_status_label.setText(f"🟢 Credential Cache: Aktiv ({cache_stats['valid_credentials']} Credentials)")
-            self.cache_status_label.setStyleSheet("color: #28a745;")
+            self.cache_status_light.setStyleSheet("""
+                QLabel {
+                    background-color: #28a745;
+                    border-radius: 6px;
+                    border: 1px solid #dee2e6;
+                }
+            """)
+            self.cache_status_light.setToolTip(f"Credential Cache: Aktiv ({cache_stats['valid_credentials']} Credentials)")
         else:
-            self.cache_status_label.setText("🔴 Credential Cache: Nicht aktiv")
-            self.cache_status_label.setStyleSheet("color: #dc3545;")
+            self.cache_status_light.setStyleSheet("""
+                QLabel {
+                    background-color: #dc3545;
+                    border-radius: 6px;
+                    border: 1px solid #dee2e6;
+                }
+            """)
+            self.cache_status_light.setToolTip("Credential Cache: Nicht aktiv")
+            
+        # Log-Status bleibt immer grün
+        self.log_status_light.setStyleSheet("""
+            QLabel {
+                background-color: #28a745;
+                border-radius: 6px;
+                border: 1px solid #dee2e6;
+            }
+        """)
+        self.log_status_light.setToolTip("Logging: Aktiv")
             
     def _authenticate(self) -> bool:
         """KeePass-Authentifizierung durchführen."""

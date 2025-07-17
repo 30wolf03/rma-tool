@@ -57,37 +57,18 @@ class TerminalMirrorWidget(QWidget):
         """Benutzeroberfläche einrichten."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         
-        # Header mit Steuerung
-        header_layout = QHBoxLayout()
-        
-        # Titel
-        title_label = QLabel("Terminal-Ausgabe")
-        title_label.setStyleSheet("font-weight: bold; color: #495057;")
-        header_layout.addWidget(title_label)
-        
-        header_layout.addStretch()
-        
-        # Nur noch Löschen-Button
-        self.clear_button = QPushButton("Löschen")
-        self.clear_button.clicked.connect(self.clear_output)
-        self.clear_button.setFixedWidth(60)
-        header_layout.addWidget(self.clear_button)
-        
-        layout.addLayout(header_layout)
-        
-        # Terminal-Ausgabe
+        # Terminal-Ausgabe (nimmt den ganzen Platz ein)
         self.text_widget = QTextEdit()
         self.text_widget.setReadOnly(True)
-        self.text_widget.setMaximumHeight(200)
-        self.text_widget.setFont(QFont("Consolas", 9))
+        self.text_widget.setFont(QFont("Consolas", 10))
         self.text_widget.setStyleSheet("""
             QTextEdit {
                 background-color: #1e1e1e;
                 color: #ffffff;
-                border: 1px solid #404040;
-                border-radius: 4px;
-                padding: 8px;
+                border: none;
+                padding: 10px;
             }
         """)
         layout.addWidget(self.text_widget)
@@ -116,6 +97,15 @@ class TerminalMirrorWidget(QWidget):
             # Aktiviere GUI-Ausgabe für das einheitliche Logging
             UnifiedLogger.enable_gui_output(self.text_widget)
             
+            # Zusätzlich: Aktiviere GUI-Ausgabe für alle loguru-Logs
+            from loguru import logger
+            logger.add(
+                self._loguru_gui_sink,
+                level="INFO",
+                format="{time:HH:mm:ss} | {level} | {name} | {message}",
+                colorize=False
+            )
+            
             self.mirroring_active = True
             
             self.logger.info("Terminal-Spiegelung gestartet")
@@ -123,6 +113,14 @@ class TerminalMirrorWidget(QWidget):
             
         except Exception as e:
             self.logger.error(f"Fehler beim Starten der Terminal-Spiegelung: {e}")
+            
+    def _loguru_gui_sink(self, message):
+        """Zusätzlicher Sink für alle loguru-Logs."""
+        record = message.record
+        formatted_message = f"{record['time'].strftime('%H:%M:%S')} | {record['level'].name} | {record['name']} | {record['message']}"
+        self.text_widget.append(formatted_message)
+        self.text_widget.moveCursor(QTextCursor.MoveOperation.End)
+        self.text_widget.ensureCursorVisible()
             
     def stop_mirroring(self):
         """Stoppt die Terminal-Spiegelung."""

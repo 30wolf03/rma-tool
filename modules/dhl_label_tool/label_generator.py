@@ -14,7 +14,7 @@ from PySide6.QtGui import QShortcut, QKeySequence
 
 from .zendesk_api import get_customer_email, update_problem_description, update_serial_number, update_order_info
 from .billbee_api import BillbeeAPI
-from shared.utils.logger import setup_logger
+from shared.utils.unified_logger import get_logger
 from .preview_window import PreviewWindow
 from .dhl_api import DHLAPI as DHL_API_CLASS
 from .utils import validate_inputs, validate_reference_number
@@ -62,7 +62,7 @@ class DHLLabelGenerator(QMainWindow):
     def __init__(self, parent=None):
         try:
             super().__init__(parent)
-            self.logger = setup_logger("RMA-Tool.DHL-Label-Tool.LabelGenerator")
+            self.logger = get_logger("DHL-Label-Tool.LabelGenerator")
             self.logger.info("Starte Initialisierung der Anwendung")
             
             # Setze den Fenstertitel
