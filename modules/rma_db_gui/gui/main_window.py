@@ -162,9 +162,7 @@ class MainWindow(QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
-        
-        # Deaktiviere die Standard-Sortierung, da wir unsere eigene verwenden
-        self.table.setSortingEnabled(False)
+        self.table.setSortingEnabled(False)  # Ursprünglich deaktiviert
         
         # Setze Header-Eigenschaften für bessere Sortierung
         header = self.table.horizontalHeader()
@@ -412,13 +410,15 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Ready")
 
     def _setup_connections(self) -> None:
-        """Set up signal connections."""
         self.connect_button.clicked.connect(self.connect_to_database)
         self.password_input.returnPressed.connect(self.connect_to_database)
-        
-        # Verbinde Header-Sortierung mit unserer benutzerdefinierten Sortier-Methode
+        # Entferne sectionClicked-Verbindung und _handle_sort
         header = self.table.horizontalHeader()
-        header.sectionClicked.connect(self._handle_sort)
+        try:
+            header.sortIndicatorChanged.disconnect(self._log_sort)
+        except TypeError:
+            pass
+        header.sortIndicatorChanged.connect(self._log_sort)
 
     def _show_error(self, title: str, message: str) -> None:
         """Show an error message dialog.
@@ -488,6 +488,13 @@ class MainWindow(QMainWindow):
             current_sort_order = header.sortIndicatorOrder()
             logger.info(f"Aktuelle Sortierung - Spalte: {current_sort_column}, Richtung: {current_sort_order}")
             
+            # Signalverbindung trennen, um doppelte Verbindungen zu verhindern
+            header = self.table.horizontalHeader()
+            try:
+                header.sortIndicatorChanged.disconnect(self._log_sort)
+            except TypeError:
+                pass  # War nicht verbunden
+
             # Execute query to get RMA data with storage location names and handler
             if self.show_deleted_entries:
                 # Papierkorb-Ansicht: Zeige gelöschte Einträge
@@ -1291,11 +1298,19 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Alle {len(self.original_data)} Einträge angezeigt", 3000)
 
     def _populate_table_with_data(self, data: List[Dict[str, Any]]) -> None:
-        """Füllt die Tabelle mit den angegebenen Daten."""
         if not data:
             self.table.setRowCount(0)
+            self.table.setSortingEnabled(True)
+            header = self.table.horizontalHeader()
+            header.setSectionsClickable(True)
+            try:
+                header.sortIndicatorChanged.disconnect(self._log_sort)
+            except TypeError:
+                pass
+            header.sortIndicatorChanged.connect(self._log_sort)
             return
-            
+        # Entferne alle Signal-Disconnects/Connects hier
+
         # Bestimme sichtbare Spalten basierend auf Ansicht
         if self.show_deleted_entries:
             visible_columns = [
@@ -1325,6 +1340,14 @@ class MainWindow(QMainWindow):
             else:
                 headers.append(col)
         self.table.setHorizontalHeaderLabels(headers)
+        header = self.table.horizontalHeader()
+        header.setSectionsClickable(True)
+        self.table.setSortingEnabled(True)
+        try:
+            header.sortIndicatorChanged.disconnect(self._log_sort)
+        except TypeError:
+            pass
+        header.sortIndicatorChanged.connect(self._log_sort)
         
         # Blockiere Signale während des Füllens der Tabelle
         self.table.blockSignals(True)
@@ -1353,20 +1376,20 @@ class MainWindow(QMainWindow):
                 else:
                     value = row_data.get(key)
                     item = QTableWidgetItem(str(value) if value is not None else '')
-                
-                # Erlaube Bearbeitung für bestimmte Spalten
+
+                # Setze die Flags für alle Items auf voll editierbar (für Sortierbarkeit)
                 if key in ['Status', 'Type', 'StorageLocation', 'LastHandler']:
                     item.setFlags(
-                        Qt.ItemFlag.ItemIsSelectable | 
+                        Qt.ItemFlag.ItemIsSelectable |
                         Qt.ItemFlag.ItemIsEnabled
                     )
                 else:
                     item.setFlags(
-                        Qt.ItemFlag.ItemIsSelectable | 
+                        Qt.ItemFlag.ItemIsSelectable |
                         Qt.ItemFlag.ItemIsEnabled |
                         Qt.ItemFlag.ItemIsEditable
                     )
-                
+
                 # Visuelle Indikatoren für gelöschte Einträge
                 if self.show_deleted_entries:
                     item.setBackground(Qt.GlobalColor.lightGray)
@@ -1383,42 +1406,15 @@ class MainWindow(QMainWindow):
         # Spaltenbreiten anpassen
         self.table.resizeColumnsToContents()
 
-    def _handle_sort(self, logical_index: int) -> None:
-        """Behandelt das Sortieren der Tabelle.
-        
-        Args:
-            logical_index: Index der geklickten Spalte
-        """
+        # Nach dem Neuaufbau der Tabelle Signalverbindung wiederherstellen
         header = self.table.horizontalHeader()
-        current_section = header.sortIndicatorSection()
-        current_order = header.sortIndicatorOrder()
-        
-        logger.info(f"Sortierung angefordert - Spalte: {logical_index}, Aktuelle Spalte: {current_section}, Aktuelle Richtung: {current_order}")
-        
-        # Wenn die gleiche Spalte nochmal geklickt wird, wechsle die Sortierrichtung
-        if current_section == logical_index:
-            # Wechsle die Sortierrichtung
-            new_order = (Qt.SortOrder.AscendingOrder 
-                        if current_order == Qt.SortOrder.DescendingOrder 
-                        else Qt.SortOrder.DescendingOrder)
-            logger.info(f"Gleiche Spalte geklickt - Wechsle Richtung von {current_order} zu {new_order}")
-        else:
-            # Neue Spalte: Standardmäßig aufsteigend sortieren
-            new_order = Qt.SortOrder.AscendingOrder
-            logger.info(f"Neue Spalte geklickt - Setze Richtung auf {new_order}")
-        
-        # Aktualisiere den Sortierindikator zuerst
-        header.setSortIndicator(logical_index, new_order)
-        logger.info(f"Sortierindikator gesetzt - Spalte: {logical_index}, Richtung: {new_order}")
-        
-        # Sortiere die Tabelle
-        self.table.sortItems(logical_index, new_order)
-        logger.info(f"Tabelle sortiert - Spalte: {logical_index}, Richtung: {new_order}")
-        
-        # Stelle sicher, dass die Sortierung aktiviert ist
-        if not self.table.isSortingEnabled():
-            self.table.setSortingEnabled(True)
-            logger.info("Sortierung wurde aktiviert")
+        header.sortIndicatorChanged.connect(self._log_sort)
+
+    def _log_sort(self, logical_index: int, order: Qt.SortOrder) -> None:
+        """Loggt jeden Sortierwechsel (Qt übernimmt die Sortierung)."""
+        logger.info(f"Sortierung geändert - Spalte: {logical_index}, Richtung: {order}")
+
+    # Entferne _handle_sort komplett
 
 class DeleteConfirmationDialog(QDialog):
     """Dialog zur Bestätigung des Archivierens von RMA-Einträgen."""
