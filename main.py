@@ -72,6 +72,7 @@ class ModuleSelector(QMainWindow):
         self.kp_handler: Optional[CentralKeePassHandler] = None
         self.credential_cache = None
         self.log_window: Optional[LogWindow] = None
+        self.rma_window = None  # Referenz auf das RMA Database GUI Fenster
         
         self.setWindowTitle("RMA-Tool - Modulauswahl")
         self.setGeometry(100, 100, 800, 500)
@@ -397,18 +398,30 @@ class ModuleSelector(QMainWindow):
                 )
                 
     def _start_rma_database_gui(self):
-        """RMA Database GUI starten."""
+        """RMA Database GUI starten oder wieder anzeigen."""
         with log_block("RMA Database GUI Start") as log:
             try:
                 log("Module Import")
                 from modules.rma_db_gui.gui.main_window import MainWindow
-                
+
                 log("Module Execution")
-                # Starte das RMA Database GUI Modul ohne Parameter
-                rma_window = MainWindow()
-                rma_window.show()
-                log("RMA Database GUI erfolgreich gestartet")
-                
+                # Prüfe, ob das Fenster schon existiert
+                if self.rma_window is not None:
+                    self.rma_window.show()
+                    self.rma_window.raise_()
+                    self.rma_window.activateWindow()
+                    log("RMA Database GUI wieder angezeigt")
+                else:
+                    self.rma_window = MainWindow()
+                    self.rma_window.show()
+                    # Wenn das Fenster geschlossen wird, Referenz löschen und Logging
+                    def on_close(event):
+                        log("RMA Database GUI wurde geschlossen (versteckt)")
+                        self.rma_window.hide()
+                        event.ignore()
+                    self.rma_window.closeEvent = on_close
+                    log("RMA Database GUI erfolgreich gestartet")
+
             except ImportError as e:
                 log(f"Import error: {str(e)}")
                 log_error_and_show_dialog(
