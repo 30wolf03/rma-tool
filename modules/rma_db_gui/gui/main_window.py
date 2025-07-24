@@ -10,7 +10,7 @@ import sys
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QIcon, QFont, QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
     RMA database entries with proper error handling and status feedback.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, current_user: str = "MWO") -> None:
         """Initialize the main window."""
         super().__init__()
         self.credential_cache = get_credential_cache()
@@ -80,7 +80,17 @@ class MainWindow(QMainWindow):
         
         # Papierkorb-Status
         self.show_deleted_entries = False
-        self.current_user = "MWO"  # Wird später aus dem Login gesetzt
+        self.current_user = current_user  # Jetzt dynamisch gesetzt
+        
+        # --- Automatisches Polling ---
+        from shared.config.settings import Settings
+        self.settings = Settings()
+        module_settings = self.settings.get_module_settings("rma_db_gui")
+        self.auto_refresh_interval = module_settings.get("auto_refresh_interval", 30)
+        self._auto_refresh_timer = QTimer(self)
+        self._auto_refresh_timer.timeout.connect(self.load_rma_data)
+        self._auto_refresh_timer.start(self.auto_refresh_interval * 1000)
+        # ---
         
         self._setup_ui()
         self._setup_toolbar()
@@ -197,7 +207,7 @@ class MainWindow(QMainWindow):
             "Aktualisieren",
             self
         )
-        refresh_action.setStatusTip("RMA-Daten aktualisieren")
+        refresh_action.setStatusTip("Tabelle neu laden")
         refresh_action.triggered.connect(self.load_rma_data)
         toolbar.addAction(refresh_action)
 
@@ -407,6 +417,10 @@ class MainWindow(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.setFont(QFont("Segoe UI", 9))
+        # Anzeige des eingeloggten Nutzers
+        self.user_label = QLabel(f"Eingeloggt als: {self.current_user}")
+        self.user_label.setStyleSheet("color: #555; font-weight: bold; margin-left: 20px;")
+        self.status_bar.addPermanentWidget(self.user_label)
         self.status_bar.showMessage("Ready")
 
     def _setup_connections(self) -> None:
@@ -819,18 +833,24 @@ class MainWindow(QMainWindow):
                             (ticket_number,)
                         )
                 elif column_name == 'StorageLocation':
-                    # StorageLocation ID aus Namen finden
-                    if new_value:
+                    # Akzeptiere sowohl ID als auch Namen, aber im GUI wird immer der Name angezeigt
+                    location_id = None
+                    if new_value is not None and str(new_value).isdigit():
+                        # Wenn eine ID übergeben wird (z.B. aus dem Dropdown-Dialog)
+                        location_id = int(new_value)
+                    elif new_value:
+                        # Wenn ein Name übergeben wird (z.B. durch direkte Eingabe)
                         location_query = "SELECT ID FROM StorageLocations WHERE LocationName = %s"
                         location_result = self.db_connection.execute_query(location_query, (new_value,))
                         if location_result:
                             location_id = location_result[0]['ID']
-                            cursor.execute(
-                                f"UPDATE {table_name} SET {field_name} = %s WHERE TicketNumber = %s",
-                                (location_id, ticket_number)
-                            )
                         else:
                             logger.warning(f"Lagerort nicht gefunden: {new_value}")
+                    if location_id is not None:
+                        cursor.execute(
+                            f"UPDATE {table_name} SET {field_name} = %s WHERE TicketNumber = %s",
+                            (location_id, ticket_number)
+                        )
                     else:
                         cursor.execute(
                             f"UPDATE {table_name} SET {field_name} = NULL WHERE TicketNumber = %s",
@@ -904,7 +924,7 @@ class MainWindow(QMainWindow):
 
     def _show_dropdown_dialog(self, row: int, column: int, column_name: str) -> None:
         """Zeigt einen Dropdown-Dialog für die ausgewählte Zelle."""
-        from PySide6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QPushButton
+        from PySide6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QPushButton, QHBoxLayout
         
         dialog = QDialog(self)
         dialog.setWindowTitle(f"{column_name} auswählen")
@@ -935,13 +955,15 @@ class MainWindow(QMainWindow):
             # Speichere Mapping für späteren Zugriff
             combo.setProperty('type_mapping', type_mapping)
         elif column_name == 'StorageLocation':
-            # Lade Lagerorte aus Datenbank
+            # Lade StorageLocations aus DB
             try:
-                locations_query = "SELECT LocationName FROM StorageLocations ORDER BY LocationName"
+                locations_query = "SELECT ID, LocationName FROM StorageLocations ORDER BY LocationName"
                 locations_result = self.db_connection.execute_query(locations_query)
                 if locations_result:
                     location_names = [row['LocationName'] for row in locations_result]
                     combo.addItems([''] + location_names)
+                    # Mapping für späteren Zugriff
+                    combo.setProperty('location_map', {row['LocationName']: row['ID'] for row in locations_result})
             except Exception as e:
                 logger.error(f"Fehler beim Laden der Lagerorte: {e}")
         elif column_name == 'LastHandler':
@@ -980,22 +1002,30 @@ class MainWindow(QMainWindow):
         # Zeige Dialog
         if dialog.exec() == QDialog.DialogCode.Accepted:
             new_value = combo.currentText()
-            if new_value != current_item.text() if current_item else True:
-                # Aktualisiere Tabellenzelle
-                if not current_item:
-                    current_item = QTableWidgetItem()
-                    self.table.setItem(row, column, current_item)
-                current_item.setText(new_value)
-                
-                # Speichere in Datenbank
+            if column_name == 'StorageLocation':
+                location_map = combo.property('location_map')
+                location_id = location_map.get(new_value, None) if location_map else None
+                # Wenn leer gewählt, speichere NULL
+                if new_value.strip() == '':
+                    location_id = None
+                # Wenn Wert nicht gefunden, Fehler
+                elif location_id is None:
+                    self._show_error("Fehler", f"Lagerort nicht gefunden: {new_value}")
+                    self.load_rma_data()
+                    return
+                # Speichere in DB
                 ticket_item = self.table.item(row, 0)
                 if ticket_item:
                     ticket_number = ticket_item.text()
                     try:
-                        self._save_table_change(ticket_number, column_name, new_value)
+                        self._save_table_change(ticket_number, column_name, location_id)
+                        self.status_bar.showMessage("Änderung gespeichert", 2000)
+                        self.load_rma_data()
                     except Exception as e:
                         logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
                         self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
+                        self.load_rma_data()
+            # analog für andere Dropdowns ...
 
     def _create_new_entry(self) -> None:
         """Öffnet den Dialog zum Erstellen eines neuen RMA-Eintrags."""

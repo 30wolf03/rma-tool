@@ -119,6 +119,16 @@ class CentralKeePassHandler:
         """
         return self._user_credentials
     
+    def get_user_initials(self) -> Optional[str]:
+        """Get the user's initials/kürzel.
+        
+        Returns:
+            User's initials or None if not set
+        """
+        if self._user_credentials:
+            return self._user_credentials[0]
+        return None
+    
     def get_credentials(self, entry_title: str, module: Optional[str] = None, group: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
         """Get credentials with priority order or from a specific group.
         

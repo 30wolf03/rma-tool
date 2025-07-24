@@ -142,6 +142,14 @@ class ModuleSelector(QMainWindow):
         subtitle_label.setStyleSheet("color: #6c757d;")
         title_layout.addWidget(subtitle_label)
         
+        # Anzeige des eingeloggten Nutzers
+        if self.kp_handler:
+            initials = self.kp_handler.get_user_initials()
+            if initials:
+                user_label = QLabel(f"Eingeloggt als: {initials}")
+                user_label.setStyleSheet("color: #28a745; font-weight: bold; font-size: 10px;")
+                title_layout.addWidget(user_label)
+        
         header_layout.addLayout(title_layout)
         header_layout.addStretch()
         
@@ -412,7 +420,15 @@ class ModuleSelector(QMainWindow):
                     self.rma_window.activateWindow()
                     log("RMA Database GUI wieder angezeigt")
                 else:
-                    self.rma_window = MainWindow()
+                    # Initialen des eingeloggten Nutzers holen
+                    initials = None
+                    if self.kp_handler and hasattr(self.kp_handler, 'get_user_initials'):
+                        initials = self.kp_handler.get_user_initials()
+                    if not initials and hasattr(self.kp_handler, 'user_initials'):
+                        initials = self.kp_handler.user_initials
+                    if not initials:
+                        initials = "MWO"
+                    self.rma_window = MainWindow(current_user=initials)
                     self.rma_window.show()
                     # Wenn das Fenster geschlossen wird, Referenz löschen und Logging
                     def on_close(event):
