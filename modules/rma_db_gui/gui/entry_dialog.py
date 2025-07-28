@@ -83,7 +83,7 @@ class EntryDialog(QDialog):
         
         # Order Number
         self.order_number_input = QLineEdit()
-        form_layout.addRow("Auftragsnummer:", self.order_number_input)
+        form_layout.addRow("Bestellnummer:", self.order_number_input)
         
         # Type
         self.type_input = QComboBox()
@@ -331,10 +331,7 @@ class EntryDialog(QDialog):
             QMessageBox.warning(self, "Validierung", "Ticket-Nummer ist erforderlich.")
             return False
             
-        if not self.order_number_input.text().strip():
-            QMessageBox.warning(self, "Validierung", "Auftragsnummer ist erforderlich.")
-            return False
-            
+        # Bestellnummer ist nicht mehr Pflicht
         return True
 
     def _create_new_entry(self) -> None:

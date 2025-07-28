@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QSize, QTimer
-from PySide6.QtGui import QIcon, QFont, QAction
+from PySide6.QtGui import QIcon, QFont, QAction, QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -170,14 +170,19 @@ class MainWindow(QMainWindow):
         self.table = QTableWidget()
         self.table.setFont(QFont("Segoe UI", 9))
         self.table.setAlternatingRowColors(True)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
-        self.table.setSortingEnabled(False)  # Ursprünglich deaktiviert
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        
+        # Sortierung aktivieren
+        self.table.setSortingEnabled(True)
         
         # Setze Header-Eigenschaften für bessere Sortierung
         header = self.table.horizontalHeader()
         header.setSectionsClickable(True)
         header.setStretchLastSection(True)
+        
+        # Keyboard-Events für Delete-Funktionalität
+        self.table.keyPressEvent = self._table_key_press_event
         
         main_layout.addWidget(self.table)
 
@@ -426,13 +431,11 @@ class MainWindow(QMainWindow):
     def _setup_connections(self) -> None:
         self.connect_button.clicked.connect(self.connect_to_database)
         self.password_input.returnPressed.connect(self.connect_to_database)
-        # Entferne sectionClicked-Verbindung und _handle_sort
+        # Sortierung-Signal für Logging verbinden
         header = self.table.horizontalHeader()
-        try:
-            header.sortIndicatorChanged.disconnect(self._log_sort)
-        except TypeError:
-            pass
         header.sortIndicatorChanged.connect(self._log_sort)
+        # Tabellen-Änderungen verbinden
+        self.table.itemChanged.connect(self._on_table_item_changed)
 
     def _show_error(self, title: str, message: str) -> None:
         """Show an error message dialog.
@@ -502,12 +505,7 @@ class MainWindow(QMainWindow):
             current_sort_order = header.sortIndicatorOrder()
             logger.info(f"Aktuelle Sortierung - Spalte: {current_sort_column}, Richtung: {current_sort_order}")
             
-            # Signalverbindung trennen, um doppelte Verbindungen zu verhindern
-            header = self.table.horizontalHeader()
-            try:
-                header.sortIndicatorChanged.disconnect(self._log_sort)
-            except TypeError:
-                pass  # War nicht verbunden
+            # Qt übernimmt die Sortierung automatisch
 
             # Execute query to get RMA data with storage location names and handler
             if self.show_deleted_entries:
@@ -660,6 +658,13 @@ class MainWindow(QMainWindow):
                             Qt.ItemFlag.ItemIsSelectable | 
                             Qt.ItemFlag.ItemIsEnabled
                         )
+                    elif key in ['EntryDate', 'ExitDate']:
+                        # Datum-Spalten: Direkte Bearbeitung erlauben
+                        item.setFlags(
+                            Qt.ItemFlag.ItemIsSelectable | 
+                            Qt.ItemFlag.ItemIsEnabled |
+                            Qt.ItemFlag.ItemIsEditable
+                        )
                     else:
                         # Normale Spalten: Vollständige Bearbeitung erlauben
                         item.setFlags(
@@ -680,17 +685,23 @@ class MainWindow(QMainWindow):
                     self.table.setItem(row_idx, col_idx, item)
                     col_idx += 1
 
+            # Bedingte Formatierung anwenden
+            self._apply_conditional_formatting()
+            
             logger.info("Tabelle mit Daten gefüllt")
             
-            # Aktiviere Sortierung wieder und stelle vorherige Sortierreihenfolge wieder her
-            # self.table.setSortingEnabled(True)  # Entfernt - wir verwenden nur unsere benutzerdefinierte Sortierung
-            if current_sort_column >= 0:
-                logger.info(f"Stelle vorherige Sortierung wieder her - Spalte: {current_sort_column}, Richtung: {current_sort_order}")
-                self.table.sortItems(current_sort_column, current_sort_order)
-                header.setSortIndicator(current_sort_column, current_sort_order)
+            # Qt übernimmt die Sortierung automatisch, da setSortingEnabled(True) gesetzt ist
+            # Die Sortierung wird durch das sortIndicatorChanged Signal automatisch wiederhergestellt
             
             # Signale wieder aktivieren
             self.table.blockSignals(False)
+            
+            # Sicherstellen, dass itemChanged Verbindung besteht
+            try:
+                self.table.itemChanged.disconnect(self._on_table_item_changed)
+            except TypeError:
+                pass  # War nicht verbunden
+            self.table.itemChanged.connect(self._on_table_item_changed)
             
             # Adjust column widths
             self.table.resizeColumnsToContents()
@@ -754,28 +765,48 @@ class MainWindow(QMainWindow):
             
         row = item.row()
         column = item.column()
-        new_value = item.text()
+        new_value = item.text().strip()
         
         # Hole Ticket-Nummer der Zeile
         ticket_item = self.table.item(row, 0)  # TicketNumber ist die erste Spalte
         if not ticket_item:
             return
             
-        ticket_number = ticket_item.text()
+        ticket_number = ticket_item.text().strip()
         
         # Bestimme welche Spalte geändert wurde
         header = self.table.horizontalHeader()
         column_name = header.model().headerData(column, Qt.Orientation.Horizontal)
         
-        logger.info(f"Tabellen-Änderung: {ticket_number}, Spalte: {column_name}, Wert: {new_value}")
+        # Prüfe ob es eine neue Zeile ist (leere Ticket-Nummer)
+        is_new_row = not ticket_number
         
-        try:
-            self._save_table_change(ticket_number, column_name, new_value)
-        except Exception as e:
-            logger.error(f"Fehler beim Speichern der Tabellen-Änderung: {e}")
-            self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
-            # Lade Daten neu um Änderung rückgängig zu machen
-            self.load_rma_data()
+        logger.info(f"Tabellen-Änderung: {ticket_number or 'NEUE ZEILE'}, Spalte: {column_name}, Wert: {new_value}")
+        
+        # Für neue Zeilen: Erstelle Eintrag wenn Ticket-Nummer eingegeben wurde
+        if is_new_row and column_name == 'TicketNumber' and new_value:
+            try:
+                self._create_new_database_entry(new_value)
+                # Entferne gelbe Markierung
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    if item:
+                        item.setBackground(QColor(255, 255, 255))  # Weiß
+                self.status_bar.showMessage("Neuer Eintrag erstellt", 2000)
+            except Exception as e:
+                logger.error(f"Fehler beim Erstellen des neuen Eintrags: {e}")
+                self._show_error("Fehler", f"Eintrag konnte nicht erstellt werden: {e}")
+                return
+        
+        # Speichere Änderung in Datenbank (nur für existierende Einträge)
+        elif ticket_number:
+            try:
+                self._save_table_change(ticket_number, column_name, new_value)
+            except Exception as e:
+                logger.error(f"Fehler beim Speichern der Tabellen-Änderung: {e}")
+                self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
+                # Lade Daten neu um Änderung rückgängig zu machen
+                self.load_rma_data()
 
     def _save_table_change(self, ticket_number: str, column_name: str, new_value: str) -> None:
         """Speichert eine Änderung aus der Tabelle in die Datenbank."""
@@ -915,8 +946,8 @@ class MainWindow(QMainWindow):
         header = self.table.horizontalHeader()
         column_name = header.model().headerData(column, Qt.Orientation.Horizontal)
         
-        # Nur für Dropdown-Spalten
-        if column_name not in ['Status', 'Type', 'StorageLocation', 'LastHandler']:
+        # Nur für Dropdown-Spalten und Datum-Spalten
+        if column_name not in ['Status', 'Type', 'StorageLocation', 'LastHandler', 'EntryDate', 'ExitDate']:
             return
             
         # Erstelle Dropdown-Dialog
@@ -924,7 +955,8 @@ class MainWindow(QMainWindow):
 
     def _show_dropdown_dialog(self, row: int, column: int, column_name: str) -> None:
         """Zeigt einen Dropdown-Dialog für die ausgewählte Zelle."""
-        from PySide6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QPushButton, QHBoxLayout
+        from PySide6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QPushButton, QHBoxLayout, QDateEdit, QLabel
+        from PySide6.QtCore import QDate
         
         dialog = QDialog(self)
         dialog.setWindowTitle(f"{column_name} auswählen")
@@ -933,59 +965,115 @@ class MainWindow(QMainWindow):
         
         layout = QVBoxLayout(dialog)
         
-        # Erstelle ComboBox
-        combo = QComboBox()
-        
-        # Fülle ComboBox basierend auf Spalte
-        if column_name == 'Status':
-            combo.addItems(['Open', 'In Progress', 'Completed', 'Closed'])
-        elif column_name == 'Type':
-            # Deutsche Anzeige für Type-Werte
-            type_mapping = {
-                'Reparatur': 'repair',
-                'Widerruf': 'return',
-                'Ersatz': 'replace',
-                'Rückerstattung': 'refund',
-                'Sonstiges': 'other'
-            }
+        # Erstelle Widget basierend auf Spalte
+        if column_name in ['EntryDate', 'ExitDate']:
+            # Datumsauswahl für Datum-Spalten
+            date_edit = QDateEdit()
+            date_edit.setCalendarPopup(True)
+            date_edit.setDisplayFormat("dd.MM.yyyy")
             
-            # Zeige deutsche Namen an, speichere englische Werte
-            combo.addItems(list(type_mapping.keys()))
+            # Setze aktuellen Wert
+            current_item = self.table.item(row, column)
+            if current_item and current_item.text().strip():
+                try:
+                    from datetime import datetime
+                    current_date = datetime.strptime(current_item.text(), "%Y-%m-%d").date()
+                    date_edit.setDate(QDate(current_date.year, current_date.month, current_date.day))
+                except ValueError:
+                    # Falls das Datum nicht im erwarteten Format ist, setze heutiges Datum
+                    date_edit.setDate(QDate.currentDate())
+            else:
+                # Falls kein Datum vorhanden, setze heutiges Datum
+                date_edit.setDate(QDate.currentDate())
             
-            # Speichere Mapping für späteren Zugriff
-            combo.setProperty('type_mapping', type_mapping)
-        elif column_name == 'StorageLocation':
-            # Lade StorageLocations aus DB
-            try:
-                locations_query = "SELECT ID, LocationName FROM StorageLocations ORDER BY LocationName"
-                locations_result = self.db_connection.execute_query(locations_query)
-                if locations_result:
-                    location_names = [row['LocationName'] for row in locations_result]
-                    combo.addItems([''] + location_names)
-                    # Mapping für späteren Zugriff
-                    combo.setProperty('location_map', {row['LocationName']: row['ID'] for row in locations_result})
-            except Exception as e:
-                logger.error(f"Fehler beim Laden der Lagerorte: {e}")
-        elif column_name == 'LastHandler':
-            # Lade Handler aus Datenbank
-            try:
-                handlers_query = "SELECT Name, Initials FROM Handlers ORDER BY Name"
-                handlers_result = self.db_connection.execute_query(handlers_query)
-                if handlers_result:
-                    handler_names = [f"{row['Name']} ({row['Initials']})" for row in handlers_result]
-                    combo.addItems([''] + handler_names)
-            except Exception as e:
-                logger.error(f"Fehler beim Laden der Handler: {e}")
-        
-        # Setze aktuellen Wert
-        current_item = self.table.item(row, column)
-        if current_item:
-            current_text = current_item.text()
-            index = combo.findText(current_text)
-            if index >= 0:
-                combo.setCurrentIndex(index)
-        
-        layout.addWidget(combo)
+            layout.addWidget(QLabel(f"{column_name} auswählen:"))
+            layout.addWidget(date_edit)
+            
+            # Buttons
+            button_layout = QHBoxLayout()
+            ok_button = QPushButton("OK")
+            cancel_button = QPushButton("Abbrechen")
+            
+            ok_button.clicked.connect(dialog.accept)
+            cancel_button.clicked.connect(dialog.reject)
+            
+            button_layout.addWidget(ok_button)
+            button_layout.addWidget(cancel_button)
+            layout.addLayout(button_layout)
+            
+            # Zeige Dialog
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                selected_date = date_edit.date()
+                formatted_date = selected_date.toString("yyyy-MM-dd")
+                
+                # Speichere in DB
+                ticket_item = self.table.item(row, 0)
+                if ticket_item:
+                    ticket_number = ticket_item.text()
+                    try:
+                        self._save_table_change(ticket_number, column_name, formatted_date)
+                        self.status_bar.showMessage("Datum gespeichert", 2000)
+                        self.load_rma_data()
+                    except Exception as e:
+                        logger.error(f"Fehler beim Speichern des Datums: {e}")
+                        self._show_error("Fehler", f"Datum konnte nicht gespeichert werden: {e}")
+                        self.load_rma_data()
+            return
+            
+        else:
+            # ComboBox für andere Spalten
+            combo = QComboBox()
+            
+            # Fülle ComboBox basierend auf Spalte
+            if column_name == 'Status':
+                combo.addItems(['Open', 'In Progress', 'Completed', 'Closed'])
+            elif column_name == 'Type':
+                # Deutsche Anzeige für Type-Werte
+                type_mapping = {
+                    'Reparatur': 'repair',
+                    'Widerruf': 'return',
+                    'Ersatz': 'replace',
+                    'Rückerstattung': 'refund',
+                    'Sonstiges': 'other'
+                }
+                
+                # Zeige deutsche Namen an, speichere englische Werte
+                combo.addItems(list(type_mapping.keys()))
+                
+                # Speichere Mapping für späteren Zugriff
+                combo.setProperty('type_mapping', type_mapping)
+            elif column_name == 'StorageLocation':
+                # Lade StorageLocations aus DB
+                try:
+                    locations_query = "SELECT ID, LocationName FROM StorageLocations ORDER BY LocationName"
+                    locations_result = self.db_connection.execute_query(locations_query)
+                    if locations_result:
+                        location_names = [row['LocationName'] for row in locations_result]
+                        combo.addItems([''] + location_names)
+                        # Mapping für späteren Zugriff
+                        combo.setProperty('location_map', {row['LocationName']: row['ID'] for row in locations_result})
+                except Exception as e:
+                    logger.error(f"Fehler beim Laden der Lagerorte: {e}")
+            elif column_name == 'LastHandler':
+                # Lade Handler aus Datenbank
+                try:
+                    handlers_query = "SELECT Name, Initials FROM Handlers ORDER BY Name"
+                    handlers_result = self.db_connection.execute_query(handlers_query)
+                    if handlers_result:
+                        handler_names = [f"{row['Name']} ({row['Initials']})" for row in handlers_result]
+                        combo.addItems([''] + handler_names)
+                except Exception as e:
+                    logger.error(f"Fehler beim Laden der Handler: {e}")
+            
+            # Setze aktuellen Wert
+            current_item = self.table.item(row, column)
+            if current_item:
+                current_text = current_item.text()
+                index = combo.findText(current_text)
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+            
+            layout.addWidget(combo)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -1025,10 +1113,64 @@ class MainWindow(QMainWindow):
                         logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
                         self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
                         self.load_rma_data()
-            # analog für andere Dropdowns ...
+            elif column_name == 'LastHandler':
+                # Extrahiere Initials aus dem ausgewählten Handler
+                selected_handler = combo.currentText()
+                if selected_handler.strip() == '':
+                    handler_initials = None
+                else:
+                    # Extrahiere Initials aus "Name (Initials)" Format
+                    import re
+                    match = re.search(r'\(([^)]+)\)$', selected_handler)
+                    if match:
+                        handler_initials = match.group(1)
+                    else:
+                        handler_initials = selected_handler
+                
+                # Speichere in DB
+                ticket_item = self.table.item(row, 0)
+                if ticket_item:
+                    ticket_number = ticket_item.text()
+                    try:
+                        self._save_table_change(ticket_number, column_name, handler_initials)
+                        self.status_bar.showMessage("Änderung gespeichert", 2000)
+                        self.load_rma_data()
+                    except Exception as e:
+                        logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
+                        self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
+                        self.load_rma_data()
+            elif column_name == 'Status':
+                # Speichere Status direkt
+                ticket_item = self.table.item(row, 0)
+                if ticket_item:
+                    ticket_number = ticket_item.text()
+                    try:
+                        self._save_table_change(ticket_number, column_name, new_value)
+                        self.status_bar.showMessage("Änderung gespeichert", 2000)
+                        self.load_rma_data()
+                    except Exception as e:
+                        logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
+                        self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
+                        self.load_rma_data()
+            elif column_name == 'Type':
+                # Konvertiere deutsche Anzeige zurück zu englischen Werten
+                type_mapping = combo.property('type_mapping')
+                if type_mapping:
+                    english_value = type_mapping.get(new_value, new_value)
+                    ticket_item = self.table.item(row, 0)
+                    if ticket_item:
+                        ticket_number = ticket_item.text()
+                        try:
+                            self._save_table_change(ticket_number, column_name, english_value)
+                            self.status_bar.showMessage("Änderung gespeichert", 2000)
+                            self.load_rma_data()
+                        except Exception as e:
+                            logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
+                            self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
+                            self.load_rma_data()
 
     def _create_new_entry(self) -> None:
-        """Öffnet den Dialog zum Erstellen eines neuen RMA-Eintrags."""
+        """Fügt eine neue leere Zeile zur Tabelle hinzu (Google Sheets Style)."""
         if not self.db_connection:
             self._show_error("Fehler", "Keine Datenbankverbindung")
             return
@@ -1036,16 +1178,52 @@ class MainWindow(QMainWindow):
         if self.show_deleted_entries:
             self._show_error("Fehler", "Neue Einträge können nur in der aktiven Ansicht erstellt werden")
             return
-            
-        dialog = EntryDialog(
-            parent=self,
-            db_connection=self.db_connection,
-            is_edit_mode=False
-        )
         
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.load_rma_data()
-            self._show_success("Erfolg", "Neuer RMA-Eintrag wurde erstellt")
+        # Füge eine neue leere Zeile am Anfang der Tabelle hinzu
+        self.table.insertRow(0)
+        
+        # Erstelle leere Items für alle Spalten
+        for col in range(self.table.columnCount()):
+            item = QTableWidgetItem("")
+            
+            # Setze Flags basierend auf Spaltentyp
+            header = self.table.horizontalHeader()
+            column_name = header.model().headerData(col, Qt.Orientation.Horizontal)
+            
+            if column_name in ['Status', 'Type', 'StorageLocation', 'LastHandler']:
+                # Dropdown-Spalten: Nur Auswahl erlauben
+                item.setFlags(
+                    Qt.ItemFlag.ItemIsSelectable | 
+                    Qt.ItemFlag.ItemIsEnabled
+                )
+            elif column_name in ['EntryDate', 'ExitDate']:
+                # Datum-Spalten: Direkte Bearbeitung erlauben
+                item.setFlags(
+                    Qt.ItemFlag.ItemIsSelectable | 
+                    Qt.ItemFlag.ItemIsEnabled |
+                    Qt.ItemFlag.ItemIsEditable
+                )
+            else:
+                # Normale Spalten: Vollständige Bearbeitung erlauben
+                item.setFlags(
+                    Qt.ItemFlag.ItemIsSelectable | 
+                    Qt.ItemFlag.ItemIsEnabled |
+                    Qt.ItemFlag.ItemIsEditable
+                )
+            
+            self.table.setItem(0, col, item)
+        
+        # Setze Fokus auf die erste Zelle (TicketNumber)
+        self.table.setCurrentCell(0, 0)
+        self.table.editItem(self.table.item(0, 0))
+        
+        # Markiere die neue Zeile visuell
+        for col in range(self.table.columnCount()):
+            item = self.table.item(0, col)
+            if item:
+                item.setBackground(QColor(255, 255, 220))  # Helles Gelb für neue Zeile
+        
+        self.status_bar.showMessage("Neue Zeile hinzugefügt - Füllen Sie die Daten aus", 3000)
 
     def _edit_selected_entry(self) -> None:
         """Öffnet den Dialog zum Bearbeiten des ausgewählten RMA-Eintrags."""
@@ -1413,6 +1591,13 @@ class MainWindow(QMainWindow):
                         Qt.ItemFlag.ItemIsSelectable |
                         Qt.ItemFlag.ItemIsEnabled
                     )
+                elif key in ['EntryDate', 'ExitDate']:
+                    # Datum-Spalten: Direkte Bearbeitung erlauben
+                    item.setFlags(
+                        Qt.ItemFlag.ItemIsSelectable | 
+                        Qt.ItemFlag.ItemIsEnabled |
+                        Qt.ItemFlag.ItemIsEditable
+                    )
                 else:
                     item.setFlags(
                         Qt.ItemFlag.ItemIsSelectable |
@@ -1436,15 +1621,121 @@ class MainWindow(QMainWindow):
         # Spaltenbreiten anpassen
         self.table.resizeColumnsToContents()
 
-        # Nach dem Neuaufbau der Tabelle Signalverbindung wiederherstellen
-        header = self.table.horizontalHeader()
-        header.sortIndicatorChanged.connect(self._log_sort)
+        # Qt übernimmt die Sortierung automatisch
 
+    def _apply_conditional_formatting(self) -> None:
+        """Wendet bedingte Formatierung basierend auf dem Status an."""
+        try:
+            for row in range(self.table.rowCount()):
+                # Status-Spalte finden (Spalte 4)
+                status_item = self.table.item(row, 4)  # Status ist Spalte 4
+                if not status_item:
+                    continue
+                
+                status = status_item.text().strip()
+                
+                # Farbe basierend auf Status setzen
+                if status == 'Open':
+                    # Gelb für offene Fälle
+                    color = QColor(255, 255, 200)  # Helles Gelb
+                elif status == 'In Progress':
+                    # Blau für in Bearbeitung
+                    color = QColor(200, 220, 255)  # Helles Blau
+                elif status == 'Completed':
+                    # Grün für erledigte Fälle
+                    color = QColor(200, 255, 200)  # Helles Grün
+                elif status == 'Closed':
+                    # Grau für geschlossene Fälle
+                    color = QColor(240, 240, 240)  # Helles Grau
+                else:
+                    # Standardfarbe für unbekannte Status
+                    color = QColor(255, 255, 255)  # Weiß
+                
+                # Farbe auf alle Zellen der Zeile anwenden
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    if item:
+                        item.setBackground(color)
+                        
+        except Exception as e:
+            logger.error(f"Fehler bei bedingter Formatierung: {e}")
+
+    def _create_new_database_entry(self, ticket_number: str) -> None:
+        """Erstellt einen neuen Datenbankeintrag für die angegebene Ticket-Nummer."""
+        try:
+            with self.db_connection.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Beginne Transaktion
+                cursor.execute("START TRANSACTION")
+                
+                try:
+                    # Erstelle RMA_Cases Eintrag
+                    cursor.execute("""
+                        INSERT INTO RMA_Cases (TicketNumber, OrderNumber, EntryDate, Status, Type) 
+                        VALUES (%s, %s, CURDATE(), 'Open', 'repair')
+                    """, (ticket_number, ''))
+                    
+                    # Erstelle RMA_RepairDetails Eintrag
+                    cursor.execute("""
+                        INSERT INTO RMA_RepairDetails (TicketNumber, OrderNumber, LastHandler) 
+                        VALUES (%s, %s, %s)
+                    """, (ticket_number, '', self.current_user))
+                    
+                    # Commit Transaktion
+                    cursor.execute("COMMIT")
+                    logger.info(f"Neuer RMA-Eintrag erstellt: {ticket_number}")
+                    
+                except Exception as e:
+                    # Rollback bei Fehler
+                    cursor.execute("ROLLBACK")
+                    raise e
+                    
+        except Exception as e:
+            logger.error(f"Fehler beim Erstellen des neuen Eintrags: {e}")
+            raise e
+
+    def _table_key_press_event(self, event: QKeyEvent) -> None:
+        """Behandelt Tastatureingaben in der Tabelle."""
+        if event.key() in [Qt.Key.Key_Delete, Qt.Key.Key_Backspace]:
+            # Aktuelle Zelle löschen
+            current_item = self.table.currentItem()
+            if current_item:
+                # Bestimme welche Spalte geändert wurde
+                row = current_item.row()
+                column = current_item.column()
+                header = self.table.horizontalHeader()
+                column_name = header.model().headerData(column, Qt.Orientation.Horizontal)
+                
+                # Hole Ticket-Nummer der Zeile
+                ticket_item = self.table.item(row, 0)  # TicketNumber ist die erste Spalte
+                if ticket_item:
+                    ticket_number = ticket_item.text()
+                    
+                    # Zelle leeren
+                    current_item.setText("")
+                    
+                    # In Datenbank speichern (leerer Wert)
+                    logger.info(f"Zelle gelöscht: {ticket_number}, Spalte: {column_name}")
+                    self._save_table_change(ticket_number, column_name, "")
+                    
+                    # Event als behandelt markieren
+                    event.accept()
+                    return
+        
+        # Standard-Verhalten für andere Tasten
+        QTableWidget.keyPressEvent(self.table, event)
+    
     def _log_sort(self, logical_index: int, order: Qt.SortOrder) -> None:
-        """Loggt jeden Sortierwechsel (Qt übernimmt die Sortierung)."""
+        """Loggt jeden Sortierwechsel und führt die Sortierung durch."""
         logger.info(f"Sortierung geändert - Spalte: {logical_index}, Richtung: {order}")
-
-    # Entferne _handle_sort komplett
+        
+        # Sortierung durchführen
+        self.table.sortItems(logical_index, order)
+        
+        # Sortierindikator setzen
+        header = self.table.horizontalHeader()
+        header.setSortIndicator(logical_index, order)
 
 class DeleteConfirmationDialog(QDialog):
     """Dialog zur Bestätigung des Archivierens von RMA-Einträgen."""
