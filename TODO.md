@@ -1,5 +1,18 @@
 # To-Do Liste
 
+## KRITISCH: UI/UX Performance Optimierung (Highest Priority)
+- [ ] **Optimistic UI Updates implementieren** _(Critical)_
+  - [ ] Sofortige GUI-Updates bei Änderungen (ohne DB-Reload)
+  - [ ] Hintergrund-Datenbank-Updates implementieren
+  - [ ] Fehlerbehandlung bei DB-Updates (UI-Rollback bei Fehlern)
+  - [ ] Batch-Updates für mehrere Änderungen
+  - [ ] Debouncing für schnelle aufeinanderfolgende Änderungen
+  - [ ] Lazy Loading für nur sichtbare Zeilen
+  - [ ] Lokaler Cache für häufig abgerufene Daten
+  - [ ] Incremental Updates (nur geänderte Zeilen aktualisieren)
+  - [ ] Offline-First Ansatz wie Google Sheets
+  - [ ] Natürliche Benutzerfreundlichkeit ohne Wartezeiten
+
 ## Backlog
 - [ ] **multiuser logins** _(Low)_
 - [ ] **updater** _(Medium)_

@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QSize, QTimer
-from PySide6.QtGui import QIcon, QFont, QAction, QKeyEvent
+from PySide6.QtGui import QIcon, QFont, QAction, QKeyEvent, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -1026,7 +1026,7 @@ class MainWindow(QMainWindow):
             
             # Fülle ComboBox basierend auf Spalte
             if column_name == 'Status':
-                combo.addItems(['Open', 'In Progress', 'Completed', 'Closed'])
+                combo.addItems(['Open', 'In Progress', 'Completed', 'Waiting for Customer Feedback', 'Shipping'])
             elif column_name == 'Type':
                 # Deutsche Anzeige für Type-Werte
                 type_mapping = {
@@ -1624,7 +1624,7 @@ class MainWindow(QMainWindow):
         # Qt übernimmt die Sortierung automatisch
 
     def _apply_conditional_formatting(self) -> None:
-        """Wendet bedingte Formatierung basierend auf dem Status an."""
+        """Wendet bedingte Formatierung basierend auf dem Status an (Google Sheets Style)."""
         try:
             for row in range(self.table.rowCount()):
                 # Status-Spalte finden (Spalte 4)
@@ -1634,19 +1634,26 @@ class MainWindow(QMainWindow):
                 
                 status = status_item.text().strip()
                 
-                # Farbe basierend auf Status setzen
+                # Google Sheets Farbkodierung:
+                # 🟡 Gelb = Offene Fälle
+                # 🟢 Grün = Erledigte Fälle  
+                # 🔵 Blau = Auf Kundenrückmeldung warten
+                # ⚪ Weiß = Standard
                 if status == 'Open':
-                    # Gelb für offene Fälle
-                    color = QColor(255, 255, 200)  # Helles Gelb
-                elif status == 'In Progress':
-                    # Blau für in Bearbeitung
-                    color = QColor(200, 220, 255)  # Helles Blau
+                    # Gelb für offene Fälle (wie Google Sheets)
+                    color = QColor(255, 255, 153)  # Google Sheets Gelb
+                elif status == 'Waiting for Customer Feedback':
+                    # Blau für "auf Kundenrückmeldung warten"
+                    color = QColor(173, 216, 230)  # Google Sheets Blau
                 elif status == 'Completed':
                     # Grün für erledigte Fälle
-                    color = QColor(200, 255, 200)  # Helles Grün
-                elif status == 'Closed':
-                    # Grau für geschlossene Fälle
-                    color = QColor(240, 240, 240)  # Helles Grau
+                    color = QColor(144, 238, 144)  # Google Sheets Grün
+                elif status == 'In Progress':
+                    # Helles Blau für in Bearbeitung
+                    color = QColor(200, 220, 255)  # Helles Blau
+                elif status == 'Shipping':
+                    # Dunkles Blau für Shipping (DHL-Label erstellt, unterwegs)
+                    color = QColor(100, 150, 255)  # Dunkles Blau
                 else:
                     # Standardfarbe für unbekannte Status
                     color = QColor(255, 255, 255)  # Weiß
@@ -1656,9 +1663,58 @@ class MainWindow(QMainWindow):
                     item = self.table.item(row, col)
                     if item:
                         item.setBackground(color)
+                
+                # Seriennummer-Duplikat-Erkennung (rote Markierung)
+                self._check_duplicate_serial_numbers(row)
                         
         except Exception as e:
             logger.error(f"Fehler bei bedingter Formatierung: {e}")
+
+    def _check_duplicate_serial_numbers(self, row: int) -> None:
+        """Markiert Seriennummern rot, die bereits mehrfach in der RMA-Tabelle vorkommen."""
+        try:
+            # Seriennummer-Spalte finden (normalerweise Spalte 3)
+            serial_item = self.table.item(row, 3)  # Seriennummer ist Spalte 3
+            if not serial_item:
+                return
+            
+            serial_number = serial_item.text().strip()
+            if not serial_number:
+                return
+            
+            # Prüfe, ob diese Seriennummer bereits mehrfach existiert
+            if self._is_duplicate_serial(serial_number):
+                # Rote Hintergrundfarbe für Seriennummer
+                serial_item.setBackground(QColor(255, 200, 200))  # Helles Rot
+                # Tooltip hinzufügen
+                serial_item.setToolTip("⚠️ Seriennummer bereits mehrfach in RMA-Tabelle vorhanden")
+                
+        except Exception as e:
+            logger.error(f"Fehler bei Duplikat-Erkennung: {e}")
+
+    def _is_duplicate_serial(self, serial_number: str) -> bool:
+        """Prüft, ob eine Seriennummer bereits mehrfach in der RMA-Tabelle vorkommt."""
+        try:
+            if not self.db_connection:
+                return False
+            
+            # Query: Zähle Vorkommen dieser Seriennummer
+            query = """
+                SELECT COUNT(*) as count 
+                FROM RMA_Products 
+                WHERE SerialNumber = %s AND IsDeleted = FALSE
+            """
+            results = self.db_connection.execute_query(query, (serial_number,))
+            
+            if results and len(results) > 0:
+                count = results[0].get('count', 0)
+                return count > 1  # Mehr als einmal = Duplikat
+                
+            return False
+            
+        except Exception as e:
+            logger.error(f"Fehler bei Duplikat-Prüfung: {e}")
+            return False
 
     def _create_new_database_entry(self, ticket_number: str) -> None:
         """Erstellt einen neuen Datenbankeintrag für die angegebene Ticket-Nummer."""
