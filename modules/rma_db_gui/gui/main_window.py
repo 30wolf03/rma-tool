@@ -7,7 +7,8 @@ interface for managing RMA database entries.
 from __future__ import annotations
 
 import sys
-from typing import Optional, List, Dict, Any
+import threading
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QSize, QTimer
@@ -92,6 +93,12 @@ class MainWindow(QMainWindow):
         self._auto_refresh_timer.start(self.auto_refresh_interval * 1000)
         # ---
         
+        # Optimistic-Update Zustände
+        # key: (ticket_number, column_name) -> { 'old_value': str, 'new_value': str }
+        self._pending_updates: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        self._suppress_table_change: bool = False
+        self._row_by_ticket: Dict[str, int] = {}
+
         self._setup_ui()
         self._setup_toolbar()
         self._setup_status_bar()
@@ -707,6 +714,12 @@ class MainWindow(QMainWindow):
             self.table.resizeColumnsToContents()
             logger.info("Spaltenbreiten angepasst")
             
+            # Baue Zeilen-Index nach TicketNumber auf (für Optimistic-Update-Reapply)
+            self._rebuild_row_index_by_ticket()
+
+            # Ausstehende (optimistische) Änderungen nach dem Reload wieder anwenden
+            self._reapply_pending_overlays()
+
             # Status-Meldung basierend auf Ansicht
             if self.show_deleted_entries:
                 self.status_bar.showMessage(f"Papierkorb: {len(results)} archivierte Einträge", 5000)
@@ -762,6 +775,10 @@ class MainWindow(QMainWindow):
         """Behandelt Änderungen in der Tabelle."""
         if not self.db_connection or self.show_deleted_entries:
             return
+
+        # Unterdrücke programmatische Änderungen (z. B. beim optimistischen Setzen)
+        if getattr(self, "_suppress_table_change", False):
+            return
             
         row = item.row()
         column = item.column()
@@ -800,13 +817,42 @@ class MainWindow(QMainWindow):
         
         # Speichere Änderung in Datenbank (nur für existierende Einträge)
         elif ticket_number:
+            # Optimistisches Speichern für direkte Tabellenedits
             try:
-                self._save_table_change(ticket_number, column_name, new_value)
+                # Old-Value aus original_data ermitteln (falls vorhanden)
+                old_value = None
+                try:
+                    # Mappe Column-Header auf Schlüssel in original_data
+                    data_key = column_name
+                    for row_data in self.original_data:
+                        if row_data.get('TicketNumber') == ticket_number:
+                            old_value = row_data.get(data_key)
+                            break
+                except Exception:
+                    old_value = None
+
+                # UI-Pending markieren (Text ist bereits gesetzt)
+                self._mark_cell_pending(row, column)
+                # Pending-Info registrieren
+                self._pending_updates[(ticket_number, column_name)] = {
+                    'old_value': '' if old_value is None else str(old_value),
+                    'new_value': new_value,
+                }
+
+                # Hintergrundspeichern
+                def _save_in_background():
+                    try:
+                        self._save_table_change(ticket_number, column_name, new_value)
+                        QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, True))
+                    except Exception as e:  # noqa: BLE001
+                        logger.error(f"Fehler beim Speichern im Hintergrund: {e}")
+                        QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, False, str(e)))
+
+                threading.Thread(target=_save_in_background, daemon=True).start()
             except Exception as e:
-                logger.error(f"Fehler beim Speichern der Tabellen-Änderung: {e}")
+                logger.error(f"Fehler beim Start des optimistischen Speicherns: {e}")
                 self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
-                # Lade Daten neu um Änderung rückgängig zu machen
-                self.load_rma_data()
+                # Kein reload hier, UI bleibt mit neuem Wert, Nutzer kann erneut versuchen
 
     def _save_table_change(self, ticket_number: str, column_name: str, new_value: str) -> None:
         """Speichert eine Änderung aus der Tabelle in die Datenbank."""
@@ -1006,18 +1052,34 @@ class MainWindow(QMainWindow):
                 selected_date = date_edit.date()
                 formatted_date = selected_date.toString("yyyy-MM-dd")
                 
-                # Speichere in DB
+                # Optimistisches Update
                 ticket_item = self.table.item(row, 0)
                 if ticket_item:
                     ticket_number = ticket_item.text()
+                    current_item = self.table.item(row, column)
+                    old_value = current_item.text() if current_item else ""
+
+                    self._suppress_table_change = True
                     try:
-                        self._save_table_change(ticket_number, column_name, formatted_date)
-                        self.status_bar.showMessage("Datum gespeichert", 2000)
-                        self.load_rma_data()
-                    except Exception as e:
-                        logger.error(f"Fehler beim Speichern des Datums: {e}")
-                        self._show_error("Fehler", f"Datum konnte nicht gespeichert werden: {e}")
-                        self.load_rma_data()
+                        if current_item:
+                            current_item.setText(formatted_date)
+                            self._mark_cell_pending(row, column)
+                        self._pending_updates[(ticket_number, column_name)] = {
+                            'old_value': old_value,
+                            'new_value': formatted_date,
+                        }
+                    finally:
+                        self._suppress_table_change = False
+
+                    def _save_in_background():
+                        try:
+                            self._save_table_change(ticket_number, column_name, formatted_date)
+                            QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, True))
+                        except Exception as e:  # noqa: BLE001
+                            logger.error(f"Fehler beim Speichern des Datums: {e}")
+                            QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, False, str(e)))
+
+                    threading.Thread(target=_save_in_background, daemon=True).start()
             return
             
         else:
@@ -1088,7 +1150,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(button_layout)
         
         # Zeige Dialog
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if dialog.exec() == QDialog.DialogCode.Accepted:
             new_value = combo.currentText()
             if column_name == 'StorageLocation':
                 location_map = combo.property('location_map')
@@ -1099,20 +1161,34 @@ class MainWindow(QMainWindow):
                 # Wenn Wert nicht gefunden, Fehler
                 elif location_id is None:
                     self._show_error("Fehler", f"Lagerort nicht gefunden: {new_value}")
-                    self.load_rma_data()
                     return
-                # Speichere in DB
+                # Optimistisches Update (UI zeigt Namen, DB speichert ID/NULL)
                 ticket_item = self.table.item(row, 0)
                 if ticket_item:
                     ticket_number = ticket_item.text()
+                    current_item = self.table.item(row, column)
+                    old_value = current_item.text() if current_item else ""
+                    self._suppress_table_change = True
                     try:
-                        self._save_table_change(ticket_number, column_name, location_id)
-                        self.status_bar.showMessage("Änderung gespeichert", 2000)
-                        self.load_rma_data()
-                    except Exception as e:
-                        logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
-                        self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
-                        self.load_rma_data()
+                        if current_item:
+                            current_item.setText(new_value)
+                            self._mark_cell_pending(row, column)
+                        self._pending_updates[(ticket_number, column_name)] = {
+                            'old_value': old_value,
+                            'new_value': new_value,
+                        }
+                    finally:
+                        self._suppress_table_change = False
+
+                    def _save_in_background():
+                        try:
+                            self._save_table_change(ticket_number, column_name, location_id)
+                            QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, True))
+                        except Exception as e:  # noqa: BLE001
+                            logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
+                            QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, False, str(e)))
+
+                    threading.Thread(target=_save_in_background, daemon=True).start()
             elif column_name == 'LastHandler':
                 # Extrahiere Initials aus dem ausgewählten Handler
                 selected_handler = combo.currentText()
@@ -1127,31 +1203,70 @@ class MainWindow(QMainWindow):
                     else:
                         handler_initials = selected_handler
                 
-                # Speichere in DB
+                # Optimistisches Update (UI zeigt Initialen)
                 ticket_item = self.table.item(row, 0)
                 if ticket_item:
                     ticket_number = ticket_item.text()
+                    display_value = '' if handler_initials is None else handler_initials
+                    current_item = self.table.item(row, column)
+                    old_value = current_item.text() if current_item else ""
+
+                    self._suppress_table_change = True
                     try:
-                        self._save_table_change(ticket_number, column_name, handler_initials)
-                        self.status_bar.showMessage("Änderung gespeichert", 2000)
-                        self.load_rma_data()
-                    except Exception as e:
-                        logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
-                        self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
-                        self.load_rma_data()
+                        if current_item:
+                            current_item.setText(display_value)
+                            self._mark_cell_pending(row, column)
+                        self._pending_updates[(ticket_number, column_name)] = {
+                            'old_value': old_value,
+                            'new_value': display_value,
+                        }
+                    finally:
+                        self._suppress_table_change = False
+
+                    def _save_in_background():
+                        try:
+                            self._save_table_change(ticket_number, column_name, handler_initials)
+                            QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, True))
+                        except Exception as e:  # noqa: BLE001
+                            logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
+                            QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, False, str(e)))
+
+                    threading.Thread(target=_save_in_background, daemon=True).start()
             elif column_name == 'Status':
-                # Speichere Status direkt
+                # Optimistisches Update für Status
                 ticket_item = self.table.item(row, 0)
                 if ticket_item:
                     ticket_number = ticket_item.text()
+                    current_item = self.table.item(row, column)
+                    old_value = current_item.text() if current_item else ""
+
+                    # UI sofort aktualisieren, ohne itemChanged zu triggern
+                    self._suppress_table_change = True
                     try:
-                        self._save_table_change(ticket_number, column_name, new_value)
-                        self.status_bar.showMessage("Änderung gespeichert", 2000)
-                        self.load_rma_data()
-                    except Exception as e:
-                        logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
-                        self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
-                        self.load_rma_data()
+                        if current_item:
+                            current_item.setText(new_value)
+                            self._mark_cell_pending(row, column)
+                        # Speichere Pending-Info
+                        self._pending_updates[(ticket_number, column_name)] = {
+                            'old_value': old_value,
+                            'new_value': new_value,
+                        }
+                        # Formatierung (z. B. Zeilenfarbe) aktualisieren
+                        self._apply_conditional_formatting()
+                    finally:
+                        self._suppress_table_change = False
+
+                    # Speichern im Hintergrund
+                    def _save_in_background():
+                        try:
+                            self._save_table_change(ticket_number, column_name, new_value)
+                            # Erfolg: Pending entfernen und Markierung zurücksetzen
+                            QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, True))
+                        except Exception as e:  # noqa: BLE001
+                            logger.error(f"Fehler beim Speichern im Hintergrund: {e}")
+                            QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, False, str(e)))
+
+                    threading.Thread(target=_save_in_background, daemon=True).start()
             elif column_name == 'Type':
                 # Konvertiere deutsche Anzeige zurück zu englischen Werten
                 type_mapping = combo.property('type_mapping')
@@ -1160,14 +1275,32 @@ class MainWindow(QMainWindow):
                     ticket_item = self.table.item(row, 0)
                     if ticket_item:
                         ticket_number = ticket_item.text()
-                        try:
-                            self._save_table_change(ticket_number, column_name, english_value)
-                            self.status_bar.showMessage("Änderung gespeichert", 2000)
-                            self.load_rma_data()
-                        except Exception as e:
-                            logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
-                            self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {e}")
-                            self.load_rma_data()
+                            current_item = self.table.item(row, column)
+                            old_value = current_item.text() if current_item else ""
+
+                            self._suppress_table_change = True
+                            try:
+                                if current_item:
+                                    current_item.setText(new_value)
+                                    self._mark_cell_pending(row, column)
+                                self._pending_updates[(ticket_number, column_name)] = {
+                                    'old_value': old_value,
+                                    'new_value': new_value,
+                                }
+                                # Formatierung kann sich je nach Type ändern
+                                self._apply_conditional_formatting()
+                            finally:
+                                self._suppress_table_change = False
+
+                            def _save_in_background():
+                                try:
+                                    self._save_table_change(ticket_number, column_name, english_value)
+                                    QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, True))
+                                except Exception as e:  # noqa: BLE001
+                                    logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
+                                    QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, False, str(e)))
+
+                            threading.Thread(target=_save_in_background, daemon=True).start()
 
     def _create_new_entry(self) -> None:
         """Fügt eine neue leere Zeile zur Tabelle hinzu (Google Sheets Style)."""
@@ -1670,6 +1803,9 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Fehler bei bedingter Formatierung: {e}")
 
+        # Behalte Pending-Markierungen sicht- und konsistent
+        self._reapply_pending_overlays()
+
     def _check_duplicate_serial_numbers(self, row: int) -> None:
         """Markiert Seriennummern rot, die bereits mehrfach in der RMA-Tabelle vorkommen."""
         try:
@@ -1792,6 +1928,106 @@ class MainWindow(QMainWindow):
         # Sortierindikator setzen
         header = self.table.horizontalHeader()
         header.setSortIndicator(logical_index, order)
+
+    # ===========================
+    # Optimistic-UI Hilfsfunktionen
+    # ===========================
+
+    def _rebuild_row_index_by_ticket(self) -> None:
+        """Erstellt ein Mapping von TicketNumber auf Tabellenzeile."""
+        self._row_by_ticket.clear()
+        for row in range(self.table.rowCount()):
+            ticket_item = self.table.item(row, 0)
+            if ticket_item:
+                self._row_by_ticket[ticket_item.text()] = row
+
+    def _get_column_index_by_name(self, column_name: str) -> int:
+        """Gibt den Spaltenindex anhand des Spaltennamens zurück oder -1."""
+        header = self.table.horizontalHeader()
+        for idx in range(self.table.columnCount()):
+            name = header.model().headerData(idx, Qt.Orientation.Horizontal)
+            if name == column_name:
+                return idx
+        return -1
+
+    def _mark_cell_pending(self, row: int, column: int) -> None:
+        """Markiert eine Zelle als 'pending' (optische Kennzeichnung)."""
+        item = self.table.item(row, column)
+        if not item:
+            return
+        font = item.font()
+        font.setItalic(True)
+        item.setFont(font)
+        item.setForeground(QColor(90, 90, 90))
+        item.setToolTip("Änderung wird synchronisiert …")
+
+    def _clear_cell_pending(self, row: int, column: int) -> None:
+        """Entfernt die 'pending' Kennzeichnung einer Zelle."""
+        item = self.table.item(row, column)
+        if not item:
+            return
+        font = item.font()
+        font.setItalic(False)
+        item.setFont(font)
+        item.setForeground(QColor(0, 0, 0))
+        item.setToolTip("")
+
+    def _finalize_pending_update(self, ticket_number: str, column_name: str, success: bool, error_message: Optional[str] = None) -> None:
+        """Finalisiert eine ausstehende Änderung: entfernt Pending oder macht Rollback."""
+        key = (ticket_number, column_name)
+        pending = self._pending_updates.get(key)
+        col_idx = self._get_column_index_by_name(column_name)
+        row_idx = self._row_by_ticket.get(ticket_number, -1)
+
+        if row_idx >= 0 and col_idx >= 0:
+            if success:
+                # Erfolg: Pending-Markierung entfernen
+                self._clear_cell_pending(row_idx, col_idx)
+                self.status_bar.showMessage("Änderung gespeichert", 2000)
+                # Eintrag aus Pending entfernen
+                if key in self._pending_updates:
+                    del self._pending_updates[key]
+            else:
+                # Fehler: Rollback zum alten Wert, Pending entfernen
+                if pending is not None:
+                    old_value = pending.get('old_value', '')
+                    self._suppress_table_change = True
+                    try:
+                        item = self.table.item(row_idx, col_idx)
+                        if item:
+                            item.setText(old_value)
+                    finally:
+                        self._suppress_table_change = False
+                self._clear_cell_pending(row_idx, col_idx)
+                if key in self._pending_updates:
+                    del self._pending_updates[key]
+                if error_message:
+                    self._show_error("Fehler", f"Änderung konnte nicht gespeichert werden: {error_message}")
+
+        # Nach Finalisierung Pending erneut anwenden, falls weitere Einträge existieren
+        self._reapply_pending_overlays()
+
+    def _reapply_pending_overlays(self) -> None:
+        """Wendet ausstehende Änderungen erneut an (z. B. nach Reload/Formatierung)."""
+        if not self._pending_updates:
+            return
+        for (ticket_number, column_name), info in list(self._pending_updates.items()):
+            row_idx = self._row_by_ticket.get(ticket_number, -1)
+            col_idx = self._get_column_index_by_name(column_name)
+            if row_idx < 0 or col_idx < 0:
+                continue
+            new_value = info.get('new_value', '')
+            item = self.table.item(row_idx, col_idx)
+            if not item:
+                continue
+            # Setze Wert ohne itemChanged auszulösen
+            self._suppress_table_change = True
+            try:
+                item.setText(new_value)
+            finally:
+                self._suppress_table_change = False
+            # Stelle Pending-Optik sicher
+            self._mark_cell_pending(row_idx, col_idx)
 
 class DeleteConfirmationDialog(QDialog):
     """Dialog zur Bestätigung des Archivierens von RMA-Einträgen."""
