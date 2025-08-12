@@ -1150,7 +1150,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(button_layout)
         
         # Zeige Dialog
-            if dialog.exec() == QDialog.DialogCode.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             new_value = combo.currentText()
             if column_name == 'StorageLocation':
                 location_map = combo.property('location_map')
@@ -1251,8 +1251,8 @@ class MainWindow(QMainWindow):
                             'old_value': old_value,
                             'new_value': new_value,
                         }
-                        # Formatierung (z. B. Zeilenfarbe) aktualisieren
-                        self._apply_conditional_formatting()
+                        # Formatierung (nur betroffene Zeile, ohne teure Duplikatsprüfung)
+                        self._apply_row_formatting(row, check_duplicates=False)
                     finally:
                         self._suppress_table_change = False
 
@@ -1275,32 +1275,32 @@ class MainWindow(QMainWindow):
                     ticket_item = self.table.item(row, 0)
                     if ticket_item:
                         ticket_number = ticket_item.text()
-                            current_item = self.table.item(row, column)
-                            old_value = current_item.text() if current_item else ""
+                        current_item = self.table.item(row, column)
+                        old_value = current_item.text() if current_item else ""
 
-                            self._suppress_table_change = True
+                        self._suppress_table_change = True
+                        try:
+                            if current_item:
+                                current_item.setText(new_value)
+                            self._mark_cell_pending(row, column)
+                            self._pending_updates[(ticket_number, column_name)] = {
+                                'old_value': old_value,
+                                'new_value': new_value,
+                            }
+                            # Formatierung nur für diese Zeile aktualisieren
+                            self._apply_row_formatting(row, check_duplicates=False)
+                        finally:
+                            self._suppress_table_change = False
+
+                        def _save_in_background():
                             try:
-                                if current_item:
-                                    current_item.setText(new_value)
-                                    self._mark_cell_pending(row, column)
-                                self._pending_updates[(ticket_number, column_name)] = {
-                                    'old_value': old_value,
-                                    'new_value': new_value,
-                                }
-                                # Formatierung kann sich je nach Type ändern
-                                self._apply_conditional_formatting()
-                            finally:
-                                self._suppress_table_change = False
+                                self._save_table_change(ticket_number, column_name, english_value)
+                                QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, True))
+                            except Exception as e:  # noqa: BLE001
+                                logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
+                                QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, False, str(e)))
 
-                            def _save_in_background():
-                                try:
-                                    self._save_table_change(ticket_number, column_name, english_value)
-                                    QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, True))
-                                except Exception as e:  # noqa: BLE001
-                                    logger.error(f"Fehler beim Speichern der Dropdown-Änderung: {e}")
-                                    QTimer.singleShot(0, lambda: self._finalize_pending_update(ticket_number, column_name, False, str(e)))
-
-                            threading.Thread(target=_save_in_background, daemon=True).start()
+                        threading.Thread(target=_save_in_background, daemon=True).start()
 
     def _create_new_entry(self) -> None:
         """Fügt eine neue leere Zeile zur Tabelle hinzu (Google Sheets Style)."""
@@ -1806,6 +1806,34 @@ class MainWindow(QMainWindow):
         # Behalte Pending-Markierungen sicht- und konsistent
         self._reapply_pending_overlays()
 
+    def _apply_row_formatting(self, row: int, check_duplicates: bool = True) -> None:
+        """Wendet Formatierung für eine einzelne Zeile an (schneller als Full-Repaint)."""
+        try:
+            status_item = self.table.item(row, 4)
+            status = status_item.text().strip() if status_item else ''
+            if status == 'Open':
+                color = QColor(255, 255, 153)
+            elif status == 'Waiting for Customer Feedback':
+                color = QColor(173, 216, 230)
+            elif status == 'Completed':
+                color = QColor(144, 238, 144)
+            elif status == 'In Progress':
+                color = QColor(200, 220, 255)
+            elif status == 'Shipping':
+                color = QColor(100, 150, 255)
+            else:
+                color = QColor(255, 255, 255)
+
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                if item:
+                    item.setBackground(color)
+
+            if check_duplicates:
+                self._check_duplicate_serial_numbers(row)
+        except Exception as e:
+            logger.error(f"Fehler bei Zeilenformatierung: {e}")
+
     def _check_duplicate_serial_numbers(self, row: int) -> None:
         """Markiert Seriennummern rot, die bereits mehrfach in der RMA-Tabelle vorkommen."""
         try:
@@ -2016,9 +2044,15 @@ class MainWindow(QMainWindow):
             col_idx = self._get_column_index_by_name(column_name)
             if row_idx < 0 or col_idx < 0:
                 continue
-            new_value = info.get('new_value', '')
+            new_value = str(info.get('new_value', '') or '')
             item = self.table.item(row_idx, col_idx)
             if not item:
+                continue
+            # Wenn der aktuelle (Server-)Wert bereits dem neuen Wert entspricht,
+            # ist die Synchronisierung abgeschlossen -> Pending entfernen
+            current_text = item.text()
+            if current_text == new_value:
+                self._finalize_pending_update(ticket_number, column_name, True)
                 continue
             # Setze Wert ohne itemChanged auszulösen
             self._suppress_table_change = True
