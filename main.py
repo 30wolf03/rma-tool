@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, 
     QLabel, QWidget, QMessageBox, QDialog, QFrame, QGridLayout
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QIcon, QFont, QPixmap
 
 
@@ -83,6 +83,8 @@ class ModuleSelector(QMainWindow):
             self._setup_ui()
             self._update_status()  # Status nach UI-Erstellung aktualisieren
             self._center_window()
+            # RMA-DB-GUI im Hintergrund vorladen, damit das erste Öffnen instant ist
+            QTimer.singleShot(0, self._preload_rma_database_gui)
         else:
             # Bei fehlgeschlagener Authentifizierung beenden
             sys.exit(1)
@@ -455,6 +457,38 @@ class ModuleSelector(QMainWindow):
                     "ModuleExecution"
                 )
 
+
+    def _preload_rma_database_gui(self):
+        """Lädt die RMA Database GUI unsichtbar vor, um das erste Öffnen zu beschleunigen."""
+        try:
+            if self.rma_window is not None:
+                return
+            # Import hier, um Startfehler klar zu loggen
+            from modules.rma_db_gui.gui.main_window import MainWindow
+
+            # Initialen des eingeloggten Nutzers holen (wie im Start-Flow)
+            initials = None
+            if self.kp_handler and hasattr(self.kp_handler, 'get_user_initials'):
+                initials = self.kp_handler.get_user_initials()
+            if not initials and hasattr(self.kp_handler, 'user_initials'):
+                initials = self.kp_handler.user_initials
+            if not initials:
+                initials = "MWO"
+
+            # Fenster erstellen, aber nicht anzeigen
+            self.rma_window = MainWindow(current_user=initials)
+
+            # closeEvent so setzen, dass es immer nur versteckt wird
+            def on_close(event):
+                self.logger.info("RMA Database GUI wurde geschlossen (versteckt)")
+                self.rma_window.hide()
+                event.ignore()
+            self.rma_window.closeEvent = on_close
+
+            # Nicht anzeigen – nur vorbereiten (Daten laden, Timer initialisieren)
+            self.logger.info("RMA Database GUI vorab geladen (versteckt)")
+        except Exception as e:
+            self.logger.error(f"Fehler beim Vorladen der RMA Database GUI: {e}")
 
 def main():
     """Hauptfunktion der Anwendung."""
