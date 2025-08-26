@@ -123,8 +123,14 @@ class DHLAPI:
 
             except requests.exceptions.RequestException as e:
                 wait_time = backoff_factor ** attempt
+                detail = ""
+                try:
+                    if hasattr(e, "response") and e.response is not None:
+                        detail = e.response.text[:500]
+                except Exception:
+                    pass
                 self.logger.error(
-                    f"Token-Anfrage fehlgeschlagen (Versuch {attempt}/{retries}): {e}"
+                    f"Token-Anfrage fehlgeschlagen (Versuch {attempt}/{retries}): {e} {detail}"
                 )
                 if attempt < retries:
                     time.sleep(wait_time)
@@ -155,9 +161,12 @@ class DHLAPI:
         url = "https://api-eu.dhl.com/parcel/de/shipping/v2/orders"
         if validate:
             url += "?validate=true"
-            
+        
+        # Nutze Cache-Token, refreshe nur bei Ablauf
+        if self.is_token_expired():
+            self.get_auth_token()
         headers = {
-            "Authorization": f"Bearer {self.get_auth_token()}",
+            "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
             "Message-Id": str(uuid.uuid4()),
             "Message-Time": datetime.utcnow().isoformat(),
@@ -170,8 +179,15 @@ class DHLAPI:
             self.log_safe_data("Headers", headers)
             self.log_safe_data("Payload", payload)
             
-            response = requests.post(url, json=payload, headers=headers)
-            response_data = response.json()
+            response = requests.post(url, json=payload, headers=headers, timeout=15)
+            # Bei 401: einmal Token refreshen und retryen
+            if response.status_code == 401:
+                self.logger.warning("401 von Shipping-API – refreshe Token und retrye einmal")
+                self.get_auth_token()
+                headers["Authorization"] = f"Bearer {self.access_token}"
+                response = requests.post(url, json=payload, headers=headers, timeout=15)
+
+            response_data = response.json() if response.content else {}
             
             # Bei Validierung: Prüfe auf Validierungswarnungen
             if validate:
