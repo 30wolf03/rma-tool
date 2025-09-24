@@ -124,29 +124,7 @@ class MainWindow(QMainWindow):
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Password input section
-        password_widget = QWidget()
-        password_layout = QHBoxLayout(password_widget)
-        password_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Password label
-        password_label = QLabel("KeePass Master Password:")
-        password_label.setFont(QFont("Segoe UI", 10))
-        password_layout.addWidget(password_label)
-
-        # Password input
-        self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_input.setFont(QFont("Segoe UI", 10))
-        self.password_input.setPlaceholderText("Enter KeePass master password")
-        password_layout.addWidget(self.password_input)
-
-        # Connect button
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.setFont(QFont("Segoe UI", 10))
-        password_layout.addWidget(self.connect_button)
-
-        main_layout.addWidget(password_widget)
+        # Password input section removed - using central authentication
 
         # Search section
         search_widget = QWidget()
@@ -436,8 +414,6 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Ready")
 
     def _setup_connections(self) -> None:
-        self.connect_button.clicked.connect(self.connect_to_database)
-        self.password_input.returnPressed.connect(self.connect_to_database)
         # Sortierung-Signal für Logging verbinden
         header = self.table.horizontalHeader()
         header.sortIndicatorChanged.connect(self._log_sort)
@@ -464,36 +440,6 @@ class MainWindow(QMainWindow):
         LoggingMessageBox.information(self, title, message)
         self.status_bar.showMessage(message, 5000)
 
-    def connect_to_database(self) -> None:
-        """Connect to the database using KeePass credentials."""
-        password = self.password_input.text()
-        if not password:
-            self._show_error("Input Error", "Please enter the KeePass master password")
-            return
-
-        try:
-            # Create KeepassHandler and DatabaseConnection
-            keepass_handler = KeepassHandler(password)
-            self.db_connection = DatabaseConnection(keepass_handler)
-
-            # Test connection with a simple query
-            results = self.db_connection.execute_query("SELECT 1")
-            if results:
-                self._show_success("Success", "Successfully connected to the database!")
-                self.load_rma_data()
-                self.password_input.clear()
-                self.password_input.setEnabled(False)
-                self.connect_button.setEnabled(False)
-            else:
-                raise DatabaseConnectionError("Query returned no results")
-
-        except KeepassError as e:
-            self._show_error("KeePass Error", str(e))
-        except DatabaseConnectionError as e:
-            self._show_error("Connection Error", str(e))
-        except Exception as e:
-            logger.exception("Unexpected error during database connection")
-            self._show_error("Error", f"An unexpected error occurred: {e}")
 
 
 
