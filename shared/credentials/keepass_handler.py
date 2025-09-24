@@ -60,14 +60,19 @@ class CentralKeePassHandler:
     
     def _get_default_database_path(self) -> str:
         """Get the default path to the central KeePass database.
-        
+
         Returns:
             Path to the central credentials.kdbx file
         """
         if getattr(sys, "frozen", False):
-            # When running as executable
+            # When running as executable, PyInstaller puts it in _internal
             base_path = Path(sys.executable).parent
-            return str(base_path / "credentials.kdbx")
+            internal_path = base_path / "_internal" / "credentials.kdbx"
+            if internal_path.exists():
+                return str(internal_path)
+            else:
+                # Fallback to executable directory
+                return str(base_path / "credentials.kdbx")
         else:
             # When running in development mode
             base_path = Path(__file__).parent.parent.parent

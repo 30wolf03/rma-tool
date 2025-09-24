@@ -19,6 +19,7 @@ from shared.utils.enhanced_logging import (
     log_error_and_show_dialog
 )
 from shared.utils.terminal_mirror import create_terminal_mirror
+from shared.utils.updater import check_and_update_on_startup, GitUpdater
 
 # PySide6 Imports
 from PySide6.QtWidgets import (
@@ -158,6 +159,25 @@ class ModuleSelector(QMainWindow):
         # Status-Lämpchen
         self._create_status_lights(header_layout)
         
+        # Update-Button
+        self.update_button = QPushButton("🔄 Update")
+        self.update_button.setFixedSize(80, 30)
+        self.update_button.clicked.connect(self._check_for_updates)
+        self.update_button.setStyleSheet("""
+            QPushButton {
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+        header_layout.addWidget(self.update_button)
+
         # Log-Toggle Button
         self.log_toggle_button = QPushButton("📋 Logs")
         self.log_toggle_button.setCheckable(True)
@@ -265,13 +285,61 @@ class ModuleSelector(QMainWindow):
         """Log-Fenster ein-/ausblenden."""
         if not self.log_window:
             self.log_window = LogWindow(self)
-            
+
         if self.log_toggle_button.isChecked():
             self.log_window.show()
             self.log_toggle_button.setText("📋 Logs")
         else:
             self.log_window.hide()
             self.log_toggle_button.setText("📋 Logs")
+
+    def _check_for_updates(self):
+        """Manueller Update-Check."""
+        with log_block("Manual Update Check") as log:
+            try:
+                log("Manual update check triggered")
+
+                # Updater initialisieren
+                updater = GitUpdater(self)
+
+                # Update-Info abrufen
+                update_info = updater.check_for_updates()
+
+                if not update_info.has_updates:
+                    LoggingMessageBox.information(
+                        self,
+                        "Keine Updates",
+                        "Das System ist bereits auf dem neuesten Stand."
+                    )
+                    return
+
+                # Update-Benachrichtigung anzeigen
+                should_update = updater.show_update_notification(update_info)
+
+                if should_update:
+                    success, message = updater.perform_update()
+                    if success:
+                        LoggingMessageBox.information(
+                            self,
+                            "Update erfolgreich",
+                            "Das System wurde aktualisiert und muss neu gestartet werden."
+                        )
+                        # Anwendung beenden für Neustart
+                        QApplication.quit()
+                    else:
+                        LoggingMessageBox.warning(
+                            self,
+                            "Update fehlgeschlagen",
+                            f"Update konnte nicht installiert werden: {message}"
+                        )
+
+            except Exception as e:
+                log(f"Update check failed: {str(e)}")
+                LoggingMessageBox.critical(
+                    self,
+                    "Update-Fehler",
+                    f"Fehler beim Update-Check: {str(e)}"
+                )
         
     def _center_window(self):
         """Fenster zentrieren."""
@@ -520,6 +588,13 @@ def main():
                     app.setStyleSheet(f.read())
                     log("Global stylesheet loaded")
             
+            # Update-Check durchführen
+            log("Update Check")
+            should_continue = check_and_update_on_startup()
+            if not should_continue:
+                log("Update installed, restart required")
+                return  # Exit if update was installed
+
             # Hauptfenster erstellen und anzeigen
             log("Main Window")
             window = ModuleSelector()

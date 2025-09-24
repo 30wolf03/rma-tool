@@ -14,11 +14,11 @@ from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
 from ..config.settings import (
-    CREDENTIALS_FILE,
     SSH_ENTRY,
     MYSQL_ENTRY,
     PRIVATE_KEY_ENTRY,
 )
+from shared.credentials.keepass_handler import CentralKeePassHandler
 
 
 class KeepassError(Exception):
@@ -48,8 +48,8 @@ class KeepassFormatError(KeepassError):
 class KeepassHandler:
     """Handler for managing KeePass credentials.
 
-    This class provides secure access to KeePass credentials stored in a
-    KeePass database file, with proper error handling and type safety.
+    This class provides secure access to KeePass credentials using the
+    central KeePass handler, with proper error handling and type safety.
     """
 
     def __init__(self, password: str) -> None:
@@ -67,31 +67,28 @@ class KeepassHandler:
             raise ValueError("Password cannot be empty")
 
         self.password = password
-        self._kp: Optional[PyKeePass] = None
+        self._central_handler = CentralKeePassHandler()
         self._load_database()
 
     def _load_database(self) -> None:
-        """Load the KeePass database.
+        """Load the KeePass database using the central handler.
 
         Raises:
             KeepassError: If the database file is not found.
             KeepassCredentialsError: If the password is invalid.
             KeepassError: If the database format is invalid.
         """
-        if not CREDENTIALS_FILE.exists():
-            raise KeepassError(f"Credentials file not found: {CREDENTIALS_FILE}")
-
         try:
-            self._kp = PyKeePass(CREDENTIALS_FILE, password=self.password)
-        except CredentialsError as e:
-            raise KeepassCredentialsError("Invalid KeePass master password") from e
+            success = self._central_handler.open_database(self.password)
+            if not success:
+                raise KeepassError("Failed to open KeePass database")
         except Exception as e:
-            if "Invalid database format" in str(e):
-                raise KeepassFormatError(f"Invalid KeePass database format: {e}") from e
+            if "Invalid" in str(e) or "password" in str(e).lower():
+                raise KeepassCredentialsError("Invalid KeePass master password") from e
             raise KeepassError(f"Failed to load KeePass database: {e}") from e
 
     def _get_entry(self, title: str) -> Dict[str, str]:
-        """Get a KeePass entry by title.
+        """Get a KeePass entry by title using the central handler.
 
         Args:
             title: The title of the KeePass entry to retrieve.
@@ -102,22 +99,23 @@ class KeepassHandler:
         Raises:
             KeepassEntryError: If the entry is not found.
         """
-        if not self._kp:
+        if not self._central_handler.is_database_open():
             raise KeepassError("KeePass database not loaded")
 
-        entry = self._kp.find_entries(title=title, first=True)
-        if not entry:
+        # Use the central handler to get credentials
+        username, password = self._central_handler.get_credentials(title, group="Datenbank")
+
+        if not username and not password:
             raise KeepassEntryError(f"Entry '{title}' not found in KeePass database")
 
         return {
-            "username": entry.username or "",
-            "password": entry.password or "",
-            "url": entry.url or "",
-            "entry": entry,  # Speichere den kompletten Eintrag für spätere Verwendung
+            "username": username or "",
+            "password": password or "",
+            "url": "",  # URL not available from central handler
         }
 
     def get_ssh_credentials(self) -> Dict[str, str]:
-        """Get SSH connection credentials.
+        """Get SSH connection credentials using the central handler.
 
         Returns:
             Dict containing SSH credentials (username, password, private_key, url).
@@ -126,43 +124,14 @@ class KeepassHandler:
             KeepassEntryError: If required entries are missing.
         """
         try:
-            ssh_entry = self._get_entry(SSH_ENTRY)
-            entry = ssh_entry["entry"]
-            
-            # Debug-Logging für die Anhänge
-            logger.debug("Verfügbare Anhänge im SSH-Eintrag:")
-            for attachment in entry.attachments:
-                logger.debug(f"- {attachment.filename}")
-            
-            # Suche nach der angehängten OpenSSH-Key-Datei im SSH-Eintrag
-            private_key = None
-            for attachment in entry.attachments:
-                if attachment.filename == "traccar.key":
-                    private_key = attachment.data.decode('utf-8')
-                    logger.debug("OpenSSH-Key gefunden und erfolgreich gelesen")
-                    break
-
-            if not private_key:
-                logger.error("Kein OpenSSH-Key (traccar.key) in den Anhängen gefunden")
-                raise KeepassEntryError(
-                    "Private key 'traccar.key' not found in SSH entry"
-                )
-
-            # Debug-Logging für die URL
-            logger.debug(f"SSH URL: {ssh_entry['url']}")
-
-            return {
-                "username": ssh_entry["username"],
-                "password": ssh_entry["password"],
-                "private_key": private_key,
-                "url": ssh_entry["url"],
-            }
-        except KeepassEntryError as e:
+            # Use the central handler's SSH method
+            return self._central_handler.get_ssh_credentials()
+        except Exception as e:
             logger.error("Failed to get SSH credentials: {}", str(e))
-            raise
+            raise KeepassEntryError(f"Failed to get SSH credentials: {e}")
 
     def get_mysql_credentials(self) -> Dict[str, str]:
-        """Get MySQL connection credentials.
+        """Get MySQL connection credentials using the central handler.
 
         Returns:
             Dict containing MySQL credentials (username, password, host).
@@ -171,12 +140,8 @@ class KeepassHandler:
             KeepassEntryError: If the MySQL entry is missing.
         """
         try:
-            mysql_entry = self._get_entry(MYSQL_ENTRY)
-            return {
-                "username": mysql_entry["username"],
-                "password": mysql_entry["password"],
-                "host": mysql_entry["url"] or "localhost",
-            }
-        except KeepassEntryError as e:
+            # Use the central handler's MySQL method
+            return self._central_handler.get_mysql_credentials()
+        except Exception as e:
             logger.error("Failed to get MySQL credentials: {}", str(e))
-            raise 
+            raise KeepassEntryError(f"Failed to get MySQL credentials: {e}")

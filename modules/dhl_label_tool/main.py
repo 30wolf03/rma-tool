@@ -28,8 +28,19 @@ def show_error_message(message):
 
 def get_database_path():
     # Verwende die zentrale KeePass-Datenbank
-    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base_path, "credentials.kdbx")
+    if getattr(sys, "frozen", False):
+        # When running as executable, PyInstaller puts it in _internal
+        base_path = os.path.dirname(sys.executable)
+        internal_path = os.path.join(base_path, "_internal", "credentials.kdbx")
+        if os.path.exists(internal_path):
+            return internal_path
+        else:
+            # Fallback to executable directory
+            return os.path.join(base_path, "credentials.kdbx")
+    else:
+        # Development mode
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        return os.path.join(base_path, "credentials.kdbx")
 
 def get_style_path():
     # Verwende das globale I LOCK IT Stylesheet

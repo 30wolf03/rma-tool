@@ -13,6 +13,13 @@
   - [ ] Offline-First Ansatz wie Google Sheets
   - [ ] Natürliche Benutzerfreundlichkeit ohne Wartezeiten
 
+## High: Fenster-Management & Preload
+- [ ] DHL Label Tool: Single-Instance-Handling (Button bringt vorhandenes Fenster in den Vordergrund)
+- [ ] DHL Label Tool: Preload hidden beim App-Start; beim X nur verstecken statt schließen
+- [ ] RMA DB GUI: Preload hidden; beim X nur verstecken; sofortiges Show/Hide ohne Ladezeit
+- [ ] Bring-to-front statt neuer Instanz; stabile Fokus-/Z-Order
+- [ ] Zustand beim Hide erhalten (Caches, Token, DB-Verbindungen) für instant Reopen
+
 ## Backlog
 - [ ] **multiuser logins** _(Low)_
 - [ ] **updater** _(Medium)_

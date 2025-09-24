@@ -13,8 +13,24 @@ import sys
 
 # Base paths
 MODULE_DIR: Path = Path(__file__).parent.parent
-# Verwende die credentials.kdbx aus dem Root-Verzeichnis der Anwendung
-CREDENTIALS_FILE: Path = MODULE_DIR.parent.parent / "credentials.kdbx"
+
+def get_credentials_path() -> Path:
+    """Get the correct path to credentials.kdbx based on execution context."""
+    if getattr(sys, "frozen", False):
+        # When running as executable, PyInstaller puts it in _internal
+        base_path = Path(sys.executable).parent
+        internal_path = base_path / "_internal" / "credentials.kdbx"
+        if internal_path.exists():
+            return internal_path
+        else:
+            # Fallback to executable directory
+            return base_path / "credentials.kdbx"
+    else:
+        # Development mode
+        return MODULE_DIR.parent.parent / "credentials.kdbx"
+
+# Verwende die credentials.kdbx aus dem korrekten Verzeichnis
+CREDENTIALS_FILE: Path = get_credentials_path()
 
 # Logging settings
 LOG_DIR: Path = MODULE_DIR / "logs"

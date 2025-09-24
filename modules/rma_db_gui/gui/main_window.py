@@ -82,6 +82,9 @@ class MainWindow(QMainWindow):
         # Papierkorb-Status
         self.show_deleted_entries = False
         self.current_user = current_user  # Jetzt dynamisch gesetzt
+
+        # Dark Mode Status
+        self.dark_mode_enabled = False
         
         # --- Automatisches Polling ---
         from shared.config.settings import Settings
@@ -252,6 +255,16 @@ class MainWindow(QMainWindow):
         self.restore_action.triggered.connect(self._restore_selected_entries)
         self.restore_action.setVisible(False)
         toolbar.addAction(self.restore_action)
+
+        # Dark Mode Toggle
+        self.dark_mode_action = QAction(
+            "🌙 Dark Mode",
+            self
+        )
+        self.dark_mode_action.setStatusTip("Dark Mode ein-/ausschalten")
+        self.dark_mode_action.triggered.connect(self._toggle_dark_mode)
+        self.dark_mode_action.setCheckable(True)
+        toolbar.addAction(self.dark_mode_action)
 
         # Context menu for table
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -1359,6 +1372,149 @@ class MainWindow(QMainWindow):
         # Aktualisiere Status
         status_text = "Papierkorb-Ansicht" if self.show_deleted_entries else "Aktive Einträge"
         self.status_bar.showMessage(f"Ansicht gewechselt: {status_text}", 3000)
+
+    def _toggle_dark_mode(self) -> None:
+        """Schaltet zwischen Dark Mode und Light Mode um."""
+        self.dark_mode_enabled = not self.dark_mode_enabled
+
+        if self.dark_mode_enabled:
+            self.dark_mode_action.setText("☀️ Light Mode")
+            self._apply_dark_theme()
+        else:
+            self.dark_mode_action.setText("🌙 Dark Mode")
+            self._apply_light_theme()
+
+        # Aktualisiere Status
+        mode_text = "Dark Mode" if self.dark_mode_enabled else "Light Mode"
+        self.status_bar.showMessage(f"Theme gewechselt: {mode_text}", 3000)
+
+    def _apply_dark_theme(self) -> None:
+        """Wendet das Dark Theme auf die Anwendung an."""
+        dark_stylesheet = """
+        QMainWindow {
+            background-color: #2b2b2b;
+            color: #ffffff;
+        }
+        QTableWidget {
+            background-color: #3c3c3c;
+            color: #ffffff;
+            gridline-color: #555555;
+            selection-background-color: #4a90e2;
+        }
+        QTableWidget QHeaderView::section {
+            background-color: #404040;
+            color: #ffffff;
+            border: 1px solid #555555;
+        }
+        QLineEdit {
+            background-color: #404040;
+            color: #ffffff;
+            border: 1px solid #555555;
+        }
+        QPushButton {
+            background-color: #404040;
+            color: #ffffff;
+            border: 1px solid #555555;
+        }
+        QPushButton:hover {
+            background-color: #505050;
+        }
+        QStatusBar {
+            background-color: #404040;
+            color: #ffffff;
+            border-top: 1px solid #555555;
+        }
+        QToolBar {
+            background-color: #363636;
+            border-bottom: 1px solid #555555;
+        }
+        QLabel {
+            color: #ffffff;
+        }
+        QMenu {
+            background-color: #404040;
+            color: #ffffff;
+            border: 1px solid #555555;
+        }
+        QMenu::item:selected {
+            background-color: #4a90e2;
+        }
+        """
+
+        # Wende das Stylesheet an
+        self.setStyleSheet(dark_stylesheet)
+
+        # Aktualisiere Tabellenfarben für Dark Mode
+        self.table.setAlternatingRowColors(True)
+        self.table.setStyleSheet("""
+            QTableWidget {
+                alternate-background-color: #353535;
+            }
+        """)
+
+    def _apply_light_theme(self) -> None:
+        """Wendet das Light Theme auf die Anwendung an."""
+        light_stylesheet = """
+        QMainWindow {
+            background-color: #f0f0f0;
+            color: #000000;
+        }
+        QTableWidget {
+            background-color: #ffffff;
+            color: #000000;
+            gridline-color: #d0d0d0;
+            selection-background-color: #4a90e2;
+        }
+        QTableWidget QHeaderView::section {
+            background-color: #e0e0e0;
+            color: #000000;
+            border: 1px solid #c0c0c0;
+        }
+        QLineEdit {
+            background-color: #ffffff;
+            color: #000000;
+            border: 1px solid #c0c0c0;
+        }
+        QPushButton {
+            background-color: #e0e0e0;
+            color: #000000;
+            border: 1px solid #c0c0c0;
+        }
+        QPushButton:hover {
+            background-color: #d0d0d0;
+        }
+        QStatusBar {
+            background-color: #e0e0e0;
+            color: #000000;
+            border-top: 1px solid #c0c0c0;
+        }
+        QToolBar {
+            background-color: #d0d0d0;
+            border-bottom: 1px solid #c0c0c0;
+        }
+        QLabel {
+            color: #000000;
+        }
+        QMenu {
+            background-color: #ffffff;
+            color: #000000;
+            border: 1px solid #c0c0c0;
+        }
+        QMenu::item:selected {
+            background-color: #4a90e2;
+        }
+        """
+
+        # Wende das Stylesheet an
+        self.setStyleSheet(light_stylesheet)
+
+        # Aktualisiere Tabellenfarben für Light Mode
+        self.table.setAlternatingRowColors(True)
+        self.table.setStyleSheet("""
+            QTableWidget {
+                alternate-background-color: #f9f9f9;
+            }
+        """)
 
     def _restore_selected_entries(self) -> None:
         """Stellt die ausgewählten Einträge aus dem Papierkorb wieder her."""
