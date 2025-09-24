@@ -86,6 +86,7 @@ class GitUpdater:
         # Fetch latest changes first
         self._run_git_command(['fetch', 'origin'], check=False)
 
+        # Try main first, then master
         success, output = self._run_git_command(['rev-parse', 'origin/main'])
         if not success:
             success, output = self._run_git_command(['rev-parse', 'origin/master'])
@@ -94,6 +95,7 @@ class GitUpdater:
 
     def get_commits_behind(self) -> int:
         """Get number of commits behind remote"""
+        # Try main first, then master
         success, output = self._run_git_command(['rev-list', '--count', 'HEAD..origin/main'])
         if not success:
             success, output = self._run_git_command(['rev-list', '--count', 'HEAD..origin/master'])
@@ -105,6 +107,7 @@ class GitUpdater:
 
     def get_changelog(self, max_commits: int = 10) -> List[str]:
         """Get recent commit messages"""
+        # Try main first, then master
         success, output = self._run_git_command([
             'log', f'-{max_commits}', '--oneline', 'HEAD..origin/main'
         ])
@@ -157,7 +160,7 @@ class GitUpdater:
                 if not success:
                     return False, "Konnte lokale Änderungen nicht zurücksetzen"
 
-                # Pull latest changes
+                # Pull latest changes (try main first, then master)
                 success, output = self._run_git_command(['pull', 'origin', 'main'])
                 if not success:
                     success, output = self._run_git_command(['pull', 'origin', 'master'])
