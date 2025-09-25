@@ -43,9 +43,23 @@ def main():
     if build_dir.exists():
         run_command(f"rd /s /q {build_dir}")
 
+    # Clean up old spec files and executables in root
+    old_files = [
+        "main.spec",
+        "rma_tool.spec",
+        "RMA-Tool.exe",
+        "DHL Label Tool 17.spec"
+    ]
+    for old_file in old_files:
+        if os.path.exists(old_file):
+            try:
+                os.remove(old_file)
+                print(f"Removed old file: {old_file}")
+            except Exception as e:
+                print(f"Could not remove {old_file}: {e}")
+
     # Create PyInstaller spec
-    spec_content = '''
-# -*- mode: python ; coding: utf-8 -*-
+    spec_content = '''# -*- mode: python ; coding: utf-8 -*-
 
 import os
 import sys
@@ -62,34 +76,84 @@ block_cipher = None
 import os
 main_script = os.path.abspath("main.py")
 
-# Hidden imports for dynamic loading
+# Hidden imports for dynamic loading - only what's actually needed
 hidden_imports = [
     "modules.dhl_label_tool.main",
     "modules.rma_db_gui.gui.main_window",
     "shared.credentials",
     "shared.utils",
-    "PySide6.QtCore",
-    "PySide6.QtWidgets",
-    "PySide6.QtGui",
     "pymysql",
     "paramiko",
     "pykeepass",
     "loguru",
     "requests",
-    "packaging",
 ]
 
-# Collect data files
+# Include all PySide6 modules to ensure compatibility
+hidden_imports += [
+    "PySide6",
+    "PySide6.QtCore",
+    "PySide6.QtWidgets",
+    "PySide6.QtGui",
+    "PySide6.QtSvg",
+    "PySide6.QtSvgWidgets",
+    "PySide6.QtNetwork",
+    "PySide6.QtSql",
+    "PySide6.QtPrintSupport",
+    "PySide6.QtOpenGL",
+    "PySide6.QtOpenGLWidgets",
+    "PySide6.QtConcurrent",
+    "PySide6.QtTest",
+    "PySide6.QtXml",
+    "PySide6.QtXmlPatterns",
+]
+
+# Exclude only non-PySide6 modules to reduce size
+excludes = [
+    "tkinter",
+    "unittest",
+    "pydoc",
+    "test",
+    # Include all PySide6 modules - don't exclude any
+]
+
+# Add essential modules that are needed by dependencies
+hidden_imports += [
+    "pdb",  # Required by construct/pykeepass
+    "construct",
+    "construct.debug",
+    "lxml",
+    "lxml.etree",
+    "lxml.objectify",
+    "cryptography",
+    "bcrypt",
+    "nacl",
+    "charset_normalizer",
+    "certifi",
+    "packaging",
+    "setuptools",
+    "pkg_resources",
+    "platformdirs",
+    "multiprocessing",
+    "sqlite3",
+    "ssl",
+    "hashlib",
+    "base64",
+    "json",
+    "xml",
+    "urllib",
+    "http",
+]
+
+# Only include essential data files
 datas = [
     ("global_style.qss", "."),
-    ("modules/dhl_label_tool/resources_rc.py", "resources"),
-    ("modules/dhl_label_tool/resources.py", "resources"),
-    ("modules/dhl_label_tool/resources.qrc", "resources"),
-    ("modules/dhl_label_tool/icons.py", "icons"),
     ("credentials.kdbx", "."),
+    ("modules/dhl_label_tool/resources_rc.py", "modules/dhl_label_tool"),
+    ("modules/dhl_label_tool/resources.py", "modules/dhl_label_tool"),
+    ("modules/dhl_label_tool/resources.qrc", "modules/dhl_label_tool"),
+    ("modules/dhl_label_tool/icons.py", "modules/dhl_label_tool"),
     ("resources", "resources"),
-    ("modules", "modules"),
-    ("shared", "shared"),
 ]
 
 # Collect all Python files
@@ -108,7 +172,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -125,15 +189,16 @@ exe = EXE(
     name='RMA-Tool',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=True,  # Keep console for debugging
+    strip=True,  # Strip debug symbols
+    upx=True,    # Compress with UPX
+    upx_exclude=[],  # Don't exclude anything from UPX
+    console=False,  # No console window
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon='icons/dhl-label-tool-icon.ico',
 )
 
 coll = COLLECT(
@@ -141,11 +206,21 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    strip=False,
+    strip=True,  # Strip all binaries
     upx=True,
     upx_exclude=[],
-    name='RMA-Tool'
+    name='RMA-Tool',
+    # Additional optimization
+    optimize=2,  # Level 2 optimization
 )
+
+# Ensure output goes to dist directory
+import shutil
+if os.path.exists('RMA-Tool'):
+    if not os.path.exists('dist'):
+        os.makedirs('dist')
+    shutil.move('RMA-Tool', 'dist/RMA-Tool')
+    print("Moved build output to dist/RMA-Tool directory")
 '''
 
     # Write spec file
@@ -154,15 +229,15 @@ coll = COLLECT(
         f.write(spec_content)
     print(f"Created spec file: {spec_file}")
 
-    # Run PyInstaller
+    # Run PyInstaller with explicit distpath
     print("Running PyInstaller...")
-    success = run_command(f"pyinstaller --clean -y rma_tool.spec", cwd=project_root)
+    success = run_command(f"python -m PyInstaller --clean -y --distpath {dist_dir} rma_tool.spec", cwd=project_root)
 
     if not success:
         print("PyInstaller failed!")
         return False
 
-    # Check if executable was created
+    # Check if executable was created in the correct location
     exe_path = dist_dir / "RMA-Tool" / "RMA-Tool.exe"
     if exe_path.exists():
         print(f"Executable created: {exe_path}")
@@ -181,8 +256,21 @@ coll = COLLECT(
 
         return True
     else:
-        print("Executable not found!")
-        return False
+        print("Executable not found in expected location!")
+        # Check if it was created in root directory
+        root_exe = project_root / "RMA-Tool.exe"
+        if root_exe.exists():
+            print(f"Found executable in root directory: {root_exe}")
+            print("Moving to dist folder...")
+            if not dist_dir.exists():
+                dist_dir.mkdir()
+            import shutil
+            shutil.move(str(root_exe), str(exe_path))
+            print(f"Moved to: {exe_path}")
+            return True
+        else:
+            print("Executable not found anywhere!")
+            return False
 
 if __name__ == "__main__":
     success = main()

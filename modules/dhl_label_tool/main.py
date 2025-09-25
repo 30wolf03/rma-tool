@@ -173,15 +173,10 @@ def main():
         credential_cache = get_credential_cache()
         kp_handler = credential_cache.get_keepass_handler()
         if not kp_handler or not kp_handler.is_database_open():
-            # Kein zentraler Login vorhanden, zeige Login-Fenster
-            logger.info("Kein zentraler Login gefunden, zeige Login-Fenster")
-            database_path = get_database_path()
-            kp_handler = CentralKeePassHandler(database_path)
-            login_window = LoginWindow(kp_handler)
-            if login_window.exec() != QDialog.DialogCode.Accepted:
-                return None  # Kein sys.exit(), nur return None
-            # Nach erfolgreichem Login im Cache speichern
-            credential_cache.set_keepass_handler(kp_handler)
+            # Kein zentraler Login vorhanden - beende ohne eigenes Login-Fenster
+            # Das zentrale Login-System soll die Authentifizierung übernehmen
+            logger.info("Kein zentraler Login gefunden - beende ohne eigenes Login-Fenster")
+            return None
         else:
             logger.info("Zentraler Login gefunden, nutze zentralen Handler")
 

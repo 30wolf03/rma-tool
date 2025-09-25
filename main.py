@@ -6,6 +6,7 @@ Sie ermöglicht die Auswahl zwischen verschiedenen Modulen.
 
 import sys
 import os
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -86,6 +87,13 @@ class ModuleSelector(QMainWindow):
             self._center_window()
             # RMA-DB-GUI im Hintergrund vorladen, damit das erste Öffnen instant ist
             QTimer.singleShot(0, self._preload_rma_database_gui)
+            # Update-Check nach UI-Erstellung durchführen
+            QTimer.singleShot(1000, self._check_for_updates_silently)
+
+            # Periodischen Update-Check einrichten (alle 5 Minuten)
+            self.update_check_timer = QTimer()
+            self.update_check_timer.timeout.connect(self._check_for_updates_silently)
+            self.update_check_timer.start(5 * 60 * 1000)  # 5 Minuten
         else:
             # Bei fehlgeschlagener Authentifizierung beenden
             sys.exit(1)
@@ -159,13 +167,14 @@ class ModuleSelector(QMainWindow):
         # Status-Lämpchen
         self._create_status_lights(header_layout)
         
-        # Update-Button
+        # Update-Button (hidden by default, only shown when updates available)
         self.update_button = QPushButton("🔄 Update")
         self.update_button.setFixedSize(80, 30)
         self.update_button.clicked.connect(self._check_for_updates)
+        self.update_button.setVisible(False)  # Hidden by default
         self.update_button.setStyleSheet("""
             QPushButton {
-                background-color: #007bff;
+                background-color: #28a745;
                 color: white;
                 border: none;
                 border-radius: 4px;
@@ -173,10 +182,23 @@ class ModuleSelector(QMainWindow):
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #0056b3;
+                background-color: #218838;
             }
         """)
         header_layout.addWidget(self.update_button)
+
+        # Update notification indicator (small dot)
+        self.update_indicator = QLabel("🔴")
+        self.update_indicator.setFixedSize(20, 20)
+        self.update_indicator.setVisible(False)  # Hidden by default
+        self.update_indicator.setToolTip("Update verfügbar")
+        self.update_indicator.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                padding: 2px;
+            }
+        """)
+        header_layout.addWidget(self.update_indicator)
 
         # Log-Toggle Button
         self.log_toggle_button = QPushButton("📋 Logs")
@@ -322,10 +344,10 @@ class ModuleSelector(QMainWindow):
                         LoggingMessageBox.information(
                             self,
                             "Update erfolgreich",
-                            "Das System wurde aktualisiert und muss neu gestartet werden."
+                            "Das System wurde aktualisiert und startet neu..."
                         )
-                        # Anwendung beenden für Neustart
-                        QApplication.quit()
+                        # Anwendung beenden und neu starten
+                        self._restart_application()
                     else:
                         LoggingMessageBox.warning(
                             self,
@@ -340,6 +362,51 @@ class ModuleSelector(QMainWindow):
                     "Update-Fehler",
                     f"Fehler beim Update-Check: {str(e)}"
                 )
+
+    def _check_for_updates_silently(self):
+        """Silent update check to update the indicator."""
+        try:
+            updater = GitUpdater(self)
+            update_info = updater.check_for_updates()
+
+            # Update indicator visibility
+            has_updates = update_info.has_updates
+            self.update_indicator.setVisible(has_updates)
+            self.update_button.setVisible(has_updates)
+
+            if has_updates:
+                self.logger.info(f"Updates available: {update_info.commits_behind} commits")
+            else:
+                self.logger.debug("No updates available")
+
+        except Exception as e:
+            self.logger.error(f"Silent update check failed: {str(e)}")
+
+    def _restart_application(self):
+        """Restart the application after update."""
+        try:
+            # Get the current executable path
+            if getattr(sys, 'frozen', False):
+                executable = sys.executable
+            else:
+                executable = sys.argv[0]
+
+            self.logger.info(f"Restarting application: {executable}")
+
+            # Close the current application
+            QApplication.quit()
+
+            # Start new instance
+            subprocess.Popen([executable], cwd=os.getcwd())
+            sys.exit(0)
+
+        except Exception as e:
+            self.logger.error(f"Failed to restart application: {str(e)}")
+            LoggingMessageBox.critical(
+                self,
+                "Neustart-Fehler",
+                f"Das System konnte nicht neu gestartet werden: {str(e)}"
+            )
         
     def _center_window(self):
         """Fenster zentrieren."""
@@ -433,12 +500,7 @@ class ModuleSelector(QMainWindow):
                 
             except Exception as e:
                 log(f"Authentication failed: {str(e)}")
-                log_error_and_show_dialog(
-                    e,
-                    "Authentifizierungsfehler",
-                    f"Fehler bei der KeePass-Authentifizierung:\n{str(e)}",
-                    "Authentication"
-                )
+                # Don't show dialog here - the login window already handles this
                 return False
                 
     def _start_dhl_label_tool(self):
@@ -565,7 +627,7 @@ def main():
         log_level="INFO",
         log_dir="logs",
         app_name="RMA-Tool",
-        enable_console=True,
+        enable_console=False,  # Disable console to prevent flashing windows
         enable_file=True,
         enable_gui=False  # Wird später über Terminal-Mirror aktiviert
     )
@@ -588,12 +650,8 @@ def main():
                     app.setStyleSheet(f.read())
                     log("Global stylesheet loaded")
             
-            # Update-Check durchführen
-            log("Update Check")
-            should_continue = check_and_update_on_startup()
-            if not should_continue:
-                log("Update installed, restart required")
-                return  # Exit if update was installed
+            # Update-Check wird jetzt nur noch manuell durchgeführt
+            log("Application ready - manual updates only")
 
             # Hauptfenster erstellen und anzeigen
             log("Main Window")

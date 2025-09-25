@@ -72,12 +72,9 @@ class MainWindow(QMainWindow):
         # Hole zentralen Handler aus Cache
         self.central_kp_handler = self.credential_cache.get_keepass_handler()
         if not self.central_kp_handler or not self.central_kp_handler.is_database_open():
-            LoggingMessageBox.critical(
-                self, 
-                "Fehler", 
-                "Keine zentrale Authentifizierung gefunden. Bitte Anwendung neu starten."
-            )
-            sys.exit(1)
+            # Don't show error dialog here - let the main application handle authentication
+            # Just exit gracefully
+            sys.exit(0)
         
         # Papierkorb-Status
         self.show_deleted_entries = False

@@ -41,7 +41,21 @@ class GitUpdater:
     def __init__(self, parent_widget=None):
         self.logger = get_module_logger("GitUpdater")
         self.parent_widget = parent_widget
-        self.repo_path = Path(__file__).parent.parent.parent  # Project root
+
+        # Find the actual project root (not the executable location)
+        if getattr(sys, "frozen", False):
+            # When running as executable, look for the original project location
+            # This is a heuristic - in a real deployment, you'd configure this properly
+            executable_path = Path(sys.executable).parent
+            # Try to find the project root by looking for common indicators
+            if (executable_path / ".git").exists():
+                self.repo_path = executable_path
+            else:
+                # Fallback: assume the executable is in a subdirectory of the project
+                self.repo_path = executable_path.parent.parent.parent
+        else:
+            # Development mode
+            self.repo_path = Path(__file__).parent.parent.parent
 
         with LogBlock(self.logger, logging.INFO) as log:
             log(f"Updater initialisiert für Repository: {self.repo_path}")
@@ -54,7 +68,9 @@ class GitUpdater:
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                # Prevent console window creation on Windows
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
 
             if check and result.returncode != 0:
@@ -185,7 +201,9 @@ class GitUpdater:
                 ['git', 'log', '-1', '--format=%cd', '--date=short'],
                 cwd=self.repo_path,
                 capture_output=True,
-                text=True
+                text=True,
+                # Prevent console window creation on Windows
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             ).stdout.strip().replace('-', '')
 
             commit = self.get_current_commit()[:8] if self.get_current_commit() else "unknown"
@@ -235,41 +253,8 @@ class GitUpdater:
 
 
 def check_and_update_on_startup(parent_widget=None, auto_update: bool = False) -> bool:
-    """Check for updates on startup and optionally update automatically"""
-    updater = GitUpdater(parent_widget)
-
-    if not updater.is_git_repository():
-        return True  # Not a git repo, continue normally
-
-    update_info = updater.check_for_updates()
-
-    if not update_info.has_updates:
-        return True  # No updates available
-
-    # Show notification
-    should_update = updater.show_update_notification(update_info)
-
-    if should_update:
-        success, message = updater.perform_update()
-        if success:
-            if GUI_AVAILABLE and parent_widget:
-                LoggingMessageBox.information(
-                    parent_widget,
-                    "Update erfolgreich",
-                    "Das System wurde aktualisiert und muss neu gestartet werden."
-                )
-            else:
-                print("\n✅ UPDATE ERFOLGREICH!")
-                print("Das System wurde aktualisiert und muss neu gestartet werden.")
-            return False  # Restart needed
-        else:
-            if GUI_AVAILABLE and parent_widget:
-                LoggingMessageBox.warning(
-                    parent_widget,
-                    "Update fehlgeschlagen",
-                    f"Update konnte nicht installiert werden: {message}"
-                )
-            else:
-                print(f"\n❌ UPDATE FEHLGESCHLAGEN: {message}")
-
-    return True  # Continue without update
+    """Check for updates on startup and optionally update automatically
+    DEPRECATED: This function is no longer used. Updates are now user-triggered only.
+    """
+    # This function is deprecated - updates are now handled manually only
+    return True  # Always continue normally

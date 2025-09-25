@@ -57,7 +57,7 @@ class UnifiedLogger:
         )
         
         # Console-Handler
-        if enable_console:
+        if enable_console and sys.stderr is not None:
             logger.add(
                 sys.stderr,
                 level=log_level,

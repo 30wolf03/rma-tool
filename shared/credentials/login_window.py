@@ -39,7 +39,7 @@ class CentralLoginWindow(QDialog):
     
     def __init__(self, kp_handler, parent=None):
         """Initialize the login window.
-        
+
         Args:
             kp_handler: The KeePass handler instance
             parent: Parent widget
@@ -49,6 +49,7 @@ class CentralLoginWindow(QDialog):
         self.kp_handler = kp_handler
         self._credentials: Optional[Tuple[str, str]] = None  # (initials, master_password)
         self.credential_cache = get_credential_cache()
+        self.is_logging_in = False  # Flag to prevent multiple simultaneous login attempts
 
         self.setWindowTitle("RMA-Tool - Zentrale Anmeldung")
         self.setGeometry(100, 100, 500, 350)
@@ -123,7 +124,8 @@ class CentralLoginWindow(QDialog):
                 outline: none;
             }
         """)
-        self.initials_input.returnPressed.connect(self._handle_login)
+        # Only login button triggers login, no Enter key connections
+        # self.initials_input.returnPressed.connect(self._handle_login)
         login_layout.addWidget(self.initials_input)
 
         # KeePass Master Password input
@@ -147,7 +149,8 @@ class CentralLoginWindow(QDialog):
                 outline: none;
             }
         """)
-        self.master_password_input.returnPressed.connect(self._handle_login)
+        # Only connect login button to handle login, remove Enter key connections
+        # self.master_password_input.returnPressed.connect(self._handle_login)
         pw_row.addWidget(self.master_password_input)
 
         # Toggle password visibility button
@@ -237,36 +240,48 @@ class CentralLoginWindow(QDialog):
 
     def _handle_login(self) -> None:
         """Handle login attempt."""
-        initials = self.initials_input.text().strip()
-        master_password = self.master_password_input.text()
-        
-        # Validate inputs
-        if not initials:
-            self.logger.error("No initials entered")
-            LoggingMessageBox.warning(self, "Fehler", "Bitte Kürzel/Initialen eingeben.")
-            self.initials_input.setFocus()
-            return
-            
-        if not master_password:
-            self.logger.error("No master password entered")
-            LoggingMessageBox.warning(self, "Fehler", "Bitte KeePass Master-Passwort eingeben.")
-            self.master_password_input.setFocus()
+        # Prevent multiple simultaneous login attempts
+        if self.is_logging_in:
+            self.logger.warning("Login attempt already in progress, ignoring duplicate request")
             return
 
-        # Try to open KeePass database
-        if self.kp_handler.open_database(master_password):
-            self.logger.info("KeePass database opened successfully")
-            self.logger.info("-" * 80)
-            
-            # Store credentials in cache
-            self._store_credentials_in_cache(initials, master_password)
-            
-            self._credentials = (initials, master_password)  # Store for later use
-            self.accept()
-        else:
-            self.logger.error("Failed to open KeePass database")
-            LoggingMessageBox.critical(self, "Fehler", "Fehler beim Öffnen der KeePass-Datenbank. Bitte das Master-Passwort überprüfen.",)
-            self.master_password_input.setFocus()
+        self.is_logging_in = True
+        self.login_button.setEnabled(False)
+
+        try:
+            initials = self.initials_input.text().strip()
+            master_password = self.master_password_input.text()
+
+            # Validate inputs
+            if not initials:
+                self.logger.error("No initials entered")
+                LoggingMessageBox.warning(self, "Fehler", "Bitte Kürzel/Initialen eingeben.")
+                self.initials_input.setFocus()
+                return
+
+            if not master_password:
+                self.logger.error("No master password entered")
+                LoggingMessageBox.warning(self, "Fehler", "Bitte KeePass Master-Passwort eingeben.")
+                self.master_password_input.setFocus()
+                return
+
+            # Try to open KeePass database
+            if self.kp_handler.open_database(master_password):
+                self.logger.info("KeePass database opened successfully")
+                self.logger.info("-" * 80)
+
+                # Store credentials in cache
+                self._store_credentials_in_cache(initials, master_password)
+
+                self._credentials = (initials, master_password)  # Store for later use
+                self.accept()
+            else:
+                self.logger.error("Failed to open KeePass database")
+                LoggingMessageBox.critical(self, "Fehler", "Fehler beim Öffnen der KeePass-Datenbank. Bitte das Master-Passwort überprüfen.",)
+                self.master_password_input.setFocus()
+        finally:
+            self.is_logging_in = False
+            self.login_button.setEnabled(True)
 
     def _store_credentials_in_cache(self, initials: str, master_password: str) -> None:
         """Store credentials in the credential cache.
