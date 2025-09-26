@@ -167,11 +167,11 @@ class ModuleSelector(QMainWindow):
         # Status-Lämpchen
         self._create_status_lights(header_layout)
         
-        # Update-Button (hidden by default, only shown when updates available)
+        # Update-Button (always visible for testing)
         self.update_button = QPushButton("🔄 Update")
         self.update_button.setFixedSize(80, 30)
         self.update_button.clicked.connect(self._check_for_updates)
-        self.update_button.setVisible(False)  # Hidden by default
+        self.update_button.setVisible(True)  # Always visible for testing
         self.update_button.setStyleSheet("""
             QPushButton {
                 background-color: #28a745;
@@ -190,7 +190,7 @@ class ModuleSelector(QMainWindow):
         # Update notification indicator (small dot)
         self.update_indicator = QLabel("🔴")
         self.update_indicator.setFixedSize(20, 20)
-        self.update_indicator.setVisible(False)  # Hidden by default
+        self.update_indicator.setVisible(True)  # Always visible for testing
         self.update_indicator.setToolTip("Update verfügbar")
         self.update_indicator.setStyleSheet("""
             QLabel {
@@ -369,10 +369,11 @@ class ModuleSelector(QMainWindow):
             updater = GitUpdater(self)
             update_info = updater.check_for_updates()
 
-            # Update indicator visibility
+            # Update indicator visibility (button always visible for testing)
             has_updates = update_info.has_updates
             self.update_indicator.setVisible(has_updates)
-            self.update_button.setVisible(has_updates)
+            # Keep button always visible for testing
+            # self.update_button.setVisible(has_updates)
 
             if has_updates:
                 self.logger.info(f"Updates available: {update_info.commits_behind} commits")
