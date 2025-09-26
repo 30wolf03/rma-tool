@@ -8,6 +8,11 @@ QWidget {
     color: #fff;
 }
 
+/* Test Update Button Visibility */
+QPushButton#update_button {
+    background-color: rgb(0, 255, 0) !important;
+}
+
 /* Eingabefelder */
 QLineEdit {
     background-color: #f0f0f0;
