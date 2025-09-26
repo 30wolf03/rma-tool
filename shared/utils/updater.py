@@ -57,6 +57,11 @@ class GitUpdater:
             # Development mode
             self.repo_path = Path(__file__).parent.parent.parent
 
+        self.logger.info(f"GitUpdater initialized - frozen: {getattr(sys, 'frozen', False)}")
+        self.logger.info(f"Executable path: {sys.executable}")
+        self.logger.info(f"Repository path: {self.repo_path}")
+        self.logger.info(f"Git exists: {(self.repo_path / '.git').exists()}")
+
         with LogBlock(self.logger, logging.INFO) as log:
             log(f"Updater initialisiert für Repository: {self.repo_path}")
 

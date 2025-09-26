@@ -89,6 +89,7 @@ class ModuleSelector(QMainWindow):
             QTimer.singleShot(0, self._preload_rma_database_gui)
             # Update-Check nach UI-Erstellung durchführen
             QTimer.singleShot(1000, self._check_for_updates_silently)
+            self.logger.info("Update check scheduled in 1 second")
 
             # Periodischen Update-Check einrichten (alle 5 Minuten)
             self.update_check_timer = QTimer()
@@ -365,6 +366,7 @@ class ModuleSelector(QMainWindow):
 
     def _check_for_updates_silently(self):
         """Silent update check to update the indicator."""
+        self.logger.info("Starting silent update check...")
         try:
             updater = GitUpdater(self)
             update_info = updater.check_for_updates()
