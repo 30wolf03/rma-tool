@@ -368,7 +368,10 @@ class ModuleSelector(QMainWindow):
         """Silent update check to update the indicator."""
         self.logger.info("Starting silent update check...")
         try:
+            self.logger.info("Creating GitUpdater instance...")
             updater = GitUpdater(self)
+
+            self.logger.info("Calling check_for_updates()...")
             update_info = updater.check_for_updates()
 
             # Update indicator visibility (button always visible for testing)
@@ -379,11 +382,14 @@ class ModuleSelector(QMainWindow):
 
             if has_updates:
                 self.logger.info(f"Updates available: {update_info.commits_behind} commits")
+                self.logger.info(f"Changelog: {update_info.changelog}")
             else:
-                self.logger.debug("No updates available")
+                self.logger.info("No updates available")
 
         except Exception as e:
             self.logger.error(f"Silent update check failed: {str(e)}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
 
     def _restart_application(self):
         """Restart the application after update."""

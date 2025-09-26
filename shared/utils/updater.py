@@ -143,17 +143,39 @@ class GitUpdater:
 
     def check_for_updates(self) -> UpdateInfo:
         """Check if updates are available"""
+        self.logger.info("=== STARTING UPDATE CHECK ===")
         with LogBlock(self.logger, logging.INFO) as log:
             log("Prüfe auf verfügbare Updates...")
 
+            # Check if git repository exists
+            self.logger.info(f"Checking if git repository exists at: {self.repo_path}")
             if not self.is_git_repository():
-                log("Kein Git-Repository gefunden")
+                self.logger.error("Kein Git-Repository gefunden")
                 return UpdateInfo(False, "", "", 0, [])
 
+            self.logger.info("Git repository found, getting current commit...")
             current = self.get_current_commit()
+            if not current:
+                self.logger.error("Could not get current commit")
+                return UpdateInfo(False, "", "", 0, [])
+
+            self.logger.info(f"Current commit: {current}")
+
+            self.logger.info("Getting remote commit...")
             remote = self.get_remote_commit()
+            if not remote:
+                self.logger.error("Could not get remote commit")
+                return UpdateInfo(False, current, "", 0, [])
+
+            self.logger.info(f"Remote commit: {remote}")
+
+            self.logger.info("Getting commits behind...")
             behind = self.get_commits_behind()
+            self.logger.info(f"Commits behind: {behind}")
+
+            self.logger.info("Getting changelog...")
             changelog = self.get_changelog()
+            self.logger.info(f"Changelog entries: {len(changelog)}")
 
             has_updates = behind > 0
 
@@ -161,6 +183,7 @@ class GitUpdater:
             log(f"Remote Commit: {remote}")
             log(f"Commits hinterher: {behind}")
 
+            self.logger.info(f"=== UPDATE CHECK COMPLETE - Updates available: {has_updates} ===")
             return UpdateInfo(has_updates, current, remote, behind, changelog)
 
     def perform_update(self, backup: bool = True) -> Tuple[bool, str]:
