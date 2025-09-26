@@ -99,11 +99,12 @@ class GitUpdater:
 
     def get_remote_commit(self) -> Optional[str]:
         """Get latest remote commit hash"""
-        # Fetch latest changes first
+        # Fetch latest changes from both remotes
         self._run_git_command(['fetch', 'origin'], check=False)
+        self._run_git_command(['fetch', 'backup'], check=False)
 
-        # Try main first, then master
-        success, output = self._run_git_command(['rev-parse', 'origin/main'])
+        # Try backup remote first (primary), then origin (fallback)
+        success, output = self._run_git_command(['rev-parse', 'backup/master'])
         if not success:
             success, output = self._run_git_command(['rev-parse', 'origin/master'])
 
@@ -111,8 +112,8 @@ class GitUpdater:
 
     def get_commits_behind(self) -> int:
         """Get number of commits behind remote"""
-        # Try main first, then master
-        success, output = self._run_git_command(['rev-list', '--count', 'HEAD..origin/main'])
+        # Try backup remote first (primary), then origin (fallback)
+        success, output = self._run_git_command(['rev-list', '--count', 'HEAD..backup/master'])
         if not success:
             success, output = self._run_git_command(['rev-list', '--count', 'HEAD..origin/master'])
 
@@ -123,9 +124,9 @@ class GitUpdater:
 
     def get_changelog(self, max_commits: int = 10) -> List[str]:
         """Get recent commit messages"""
-        # Try main first, then master
+        # Try backup remote first (primary), then origin (fallback)
         success, output = self._run_git_command([
-            'log', f'-{max_commits}', '--oneline', 'HEAD..origin/main'
+            'log', f'-{max_commits}', '--oneline', 'HEAD..backup/master'
         ])
 
         if not success:
@@ -176,8 +177,8 @@ class GitUpdater:
                 if not success:
                     return False, "Konnte lokale Änderungen nicht zurücksetzen"
 
-                # Pull latest changes (try main first, then master)
-                success, output = self._run_git_command(['pull', 'origin', 'main'])
+                # Pull latest changes (try backup first, then origin)
+                success, output = self._run_git_command(['pull', 'backup', 'master'])
                 if not success:
                     success, output = self._run_git_command(['pull', 'origin', 'master'])
 
