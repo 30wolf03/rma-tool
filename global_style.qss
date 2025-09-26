@@ -2,10 +2,10 @@
 
 /* Allgemeines Widget-Design */
 QWidget {
-    background-color: rgb(255, 255, 255);
+    background-color: rgb(255, 0, 0);
     font-family: "Segoe UI", sans-serif;
     font-weight: normal;
-    color: #000;
+    color: #fff;
 }
 
 /* Eingabefelder */
@@ -67,12 +67,12 @@ QLabel {
 
 /* Hauptfenster */
 QMainWindow {
-    background-color: rgb(255, 255, 255);
+    background-color: rgb(255, 0, 0);
 }
 
 /* Dialog-Fenster */
 QDialog {
-    background-color: rgb(255, 255, 255);
+    background-color: rgb(255, 0, 0);
 }
 
 /* Frame-Container */
